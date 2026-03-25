@@ -135,6 +135,7 @@ export function ChannelDrawer({
   const [weixinQrcodeImg, setWeixinQrcodeImg] = useState<string>("");
   const [weixinQrcodeLoading, setWeixinQrcodeLoading] = useState(false);
   const weixinPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const weixinConfirmedRef = useRef(false);
 
   const stopWeixinPoll = useCallback(() => {
     if (weixinPollRef.current) {
@@ -147,6 +148,7 @@ export function ChannelDrawer({
     stopWeixinPoll();
     setWeixinQrcodeLoading(true);
     setWeixinQrcodeImg("");
+    weixinConfirmedRef.current = false;
     try {
       const data = await api.getWeixinQrcode();
       if (data.qrcode_img) {
@@ -156,9 +158,11 @@ export function ChannelDrawer({
           try {
             const s = await api.getWeixinQrcodeStatus(data.qrcode);
             if (s.status === "confirmed" && s.bot_token) {
+              if (weixinConfirmedRef.current) return;
+              weixinConfirmedRef.current = true;
+              stopWeixinPoll();
               form.setFieldsValue({ bot_token: s.bot_token });
               setWeixinQrcodeImg("");
-              stopWeixinPoll();
               message.success(t("channels.weixinLoginSuccess"));
             } else if (s.status === "expired") {
               stopWeixinPoll();
