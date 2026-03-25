@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import httpx
 
@@ -223,7 +225,6 @@ class ILinkClient:
         Returns:
             API response dict.
         """
-        import uuid
         return await self.sendmessage(
             {
                 "from_user_id": "",
@@ -294,7 +295,6 @@ class ILinkClient:
         if encrypt_query_param:
             cdn_base = "https://novac2c.cdn.weixin.qq.com/c2c"
             # Note: parameter name is "encrypted_query_param" (with 'd')
-            from urllib.parse import quote
             download_url = f"{cdn_base}/download?encrypted_query_param={quote(encrypt_query_param, safe='')}"
         elif url.startswith("http"):
             download_url = url

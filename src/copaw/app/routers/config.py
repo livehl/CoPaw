@@ -152,6 +152,22 @@ async def put_channels(
     return channels_config
 
 
+async def _get_weixin_base_url(request: Request) -> str:
+    """Return configured WeChat base_url for the current agent, or the default."""
+    from ..channels.weixin.client import _DEFAULT_BASE_URL
+    try:
+        from ..agent_context import get_agent_for_request
+        agent = await get_agent_for_request(request)
+        channels = agent.config.channels
+        if channels is not None:
+            weixin_cfg = getattr(channels, "weixin", None)
+            if weixin_cfg is not None:
+                return getattr(weixin_cfg, "base_url", "") or _DEFAULT_BASE_URL
+    except Exception:
+        pass
+    return _DEFAULT_BASE_URL
+
+
 @router.get(
     "/channels/weixin/qrcode",
     summary="Get WeChat iLink login QR code",
@@ -162,21 +178,9 @@ async def get_weixin_qrcode(request: Request) -> dict:
     import base64
     import io
     import httpx
-    from ..channels.weixin.client import ILinkClient, _DEFAULT_BASE_URL
+    from ..channels.weixin.client import ILinkClient
 
-    # Use configured base_url if available
-    base_url = _DEFAULT_BASE_URL
-    try:
-        from ..agent_context import get_agent_for_request
-        agent = await get_agent_for_request(request)
-        channels = agent.config.channels
-        if channels is not None:
-            weixin_cfg = getattr(channels, "weixin", None)
-            if weixin_cfg is not None:
-                base_url = getattr(weixin_cfg, "base_url", "") or _DEFAULT_BASE_URL
-    except Exception:
-        pass
-
+    base_url = await _get_weixin_base_url(request)
     client = ILinkClient(base_url=base_url)
     await client.start()
     try:
@@ -217,20 +221,9 @@ async def get_weixin_qrcode_status(
 ) -> dict:
     """Poll QR code scan status. Returns {status, bot_token, base_url}."""
     import httpx
-    from ..channels.weixin.client import ILinkClient, _DEFAULT_BASE_URL
+    from ..channels.weixin.client import ILinkClient
 
-    base_url = _DEFAULT_BASE_URL
-    try:
-        from ..agent_context import get_agent_for_request
-        agent = await get_agent_for_request(request)
-        channels = agent.config.channels
-        if channels is not None:
-            weixin_cfg = getattr(channels, "weixin", None)
-            if weixin_cfg is not None:
-                base_url = getattr(weixin_cfg, "base_url", "") or _DEFAULT_BASE_URL
-    except Exception:
-        pass
-
+    base_url = await _get_weixin_base_url(request)
     client = ILinkClient(base_url=base_url)
     await client.start()
     try:
