@@ -159,11 +159,12 @@ async def put_channels(
 )
 async def get_weixin_qrcode(request: Request) -> dict:
     """Return a QR code image (base64 PNG) for WeChat iLink Bot login."""
+    import base64
+    import io
     import httpx
     from ..channels.weixin.client import ILinkClient, _DEFAULT_BASE_URL
 
     # Use configured base_url if available
-    agent = None
     base_url = _DEFAULT_BASE_URL
     try:
         from ..agent_context import get_agent_for_request
@@ -185,12 +186,25 @@ async def get_weixin_qrcode(request: Request) -> dict:
     finally:
         await client.stop()
 
-    qrcode_img = qr_data.get("qrcode_img_content", "")
     qrcode = qr_data.get("qrcode", "")
-    if not qrcode_img and not qrcode:
+    qrcode_img_url = qr_data.get("qrcode_img_content", "")
+
+    if not qrcode and not qrcode_img_url:
         raise HTTPException(status_code=502, detail="WeChat returned empty QR code data")
 
-    return {"qrcode_img": qrcode_img, "qrcode": qrcode}
+    # Generate QR code image from the scan URL using segno (pure Python, no deps)
+    # The scan target is the URL that WeChat app should open when scanning
+    scan_url = qrcode_img_url if qrcode_img_url.startswith("http") else f"https://liteapp.weixin.qq.com/q/7GiQu1?qrcode={qrcode}&bot_type=3"
+    try:
+        import segno
+        qr = segno.make(scan_url, error="M")
+        buf = io.BytesIO()
+        qr.save(buf, kind="png", scale=6, border=2)
+        qrcode_img_b64 = base64.b64encode(buf.getvalue()).decode()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"QR code image generation failed: {exc}") from exc
+
+    return {"qrcode_img": qrcode_img_b64, "qrcode": qrcode}
 
 
 @router.get(
