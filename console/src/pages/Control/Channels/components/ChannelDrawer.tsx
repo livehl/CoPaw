@@ -8,14 +8,15 @@ import {
   Select,
   message,
 } from "@agentscope-ai/design";
-import { Alert, ConfigProvider } from "antd";
+import { Alert, ConfigProvider, Spin } from "antd";
 import { LinkOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { FormInstance } from "antd";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { getChannelLabel, type ChannelKey } from "./constants";
 import styles from "../index.module.less";
 import { useTheme } from "../../../../contexts/ThemeContext";
+import { api } from "../../../../api";
 
 const WECOM_SDK_URL =
   "https://wwcdn.weixin.qq.com/node/wework/js/wecom-aibot-sdk@0.1.0.min.js";
@@ -129,6 +130,27 @@ export function ChannelDrawer({
   const currentLang = i18n.language?.startsWith("zh") ? "zh" : "en";
   const label = activeKey ? getChannelLabel(activeKey) : activeLabel;
   const sdkLoadedRef = useRef(false);
+
+  // WeChat QR code state
+  const [weixinQrcodeImg, setWeixinQrcodeImg] = useState<string>("");
+  const [weixinQrcodeLoading, setWeixinQrcodeLoading] = useState(false);
+
+  const handleFetchWeixinQrcode = useCallback(async () => {
+    setWeixinQrcodeLoading(true);
+    setWeixinQrcodeImg("");
+    try {
+      const data = await api.getWeixinQrcode();
+      if (data.qrcode_img) {
+        setWeixinQrcodeImg(data.qrcode_img);
+      } else {
+        message.error(t("channels.weixinQrcodeFailed"));
+      }
+    } catch {
+      message.error(t("channels.weixinQrcodeFailed"));
+    } finally {
+      setWeixinQrcodeLoading(false);
+    }
+  }, [t]);
 
   // Dynamically load the WeCom SDK script
   const loadWecomSDK = useCallback((): Promise<void> => {
@@ -765,6 +787,33 @@ export function ChannelDrawer({
                 style={{ marginBottom: 16 }}
               />
             </ConfigProvider>
+            <Form.Item label={t("channels.weixinScanLogin")}>
+              <Button
+                type="primary"
+                block
+                loading={weixinQrcodeLoading}
+                onClick={handleFetchWeixinQrcode}
+              >
+                {t("channels.weixinGetQrcode")}
+              </Button>
+              {weixinQrcodeLoading && (
+                <div style={{ textAlign: "center", marginTop: 12 }}>
+                  <Spin />
+                </div>
+              )}
+              {weixinQrcodeImg && !weixinQrcodeLoading && (
+                <div style={{ textAlign: "center", marginTop: 12 }}>
+                  <img
+                    src={`data:image/png;base64,${weixinQrcodeImg}`}
+                    alt="WeChat QR Code"
+                    style={{ width: 200, height: 200 }}
+                  />
+                  <div style={{ marginTop: 8, fontSize: 12, color: isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)" }}>
+                    {t("channels.weixinScanHint")}
+                  </div>
+                </div>
+              )}
+            </Form.Item>
             <Form.Item
               name="bot_token"
               label={t("channels.weixinBotToken")}

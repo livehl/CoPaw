@@ -342,7 +342,11 @@
     "weixinBotTokenPlaceholder": "QRログイン後に自動入力、または手動で貼り付け",
     "weixinBotTokenFile": "Tokenファイルパス",
     "weixinBotTokenFileTooltip": "Botトークンの保存パス。デフォルトは ~/.copaw/weixin_bot_token",
-    "weixinMediaDir": "メディアディレクトリ"
+    "weixinMediaDir": "メディアディレクトリ",
+    "weixinScanLogin": "QRコードでログイン",
+    "weixinGetQrcode": "ログインQRコードを取得",
+    "weixinScanHint": "WeChatでQRコードをスキャンして、完了後に保存してください",
+    "weixinQrcodeFailed": "QRコードの取得に失敗しました。再試行してください"
   },
   "sessions": {
     "title": "セッション",

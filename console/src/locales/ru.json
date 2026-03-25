@@ -347,7 +347,11 @@
     "weixinBotTokenPlaceholder": "Заполняется автоматически после QR-входа или введите вручную",
     "weixinBotTokenFile": "Путь к файлу токена",
     "weixinBotTokenFileTooltip": "Путь для сохранения Bot Token. По умолчанию: ~/.copaw/weixin_bot_token",
-    "weixinMediaDir": "Директория медиафайлов"
+    "weixinMediaDir": "Директория медиафайлов",
+    "weixinScanLogin": "Войти через QR-код",
+    "weixinGetQrcode": "Получить QR-код для входа",
+    "weixinScanHint": "Отсканируйте QR-код в WeChat, затем нажмите Сохранить",
+    "weixinQrcodeFailed": "Не удалось получить QR-код, попробуйте снова"
   },
   "sessions": {
     "title": "Сессии",

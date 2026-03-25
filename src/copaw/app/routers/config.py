@@ -153,6 +153,47 @@ async def put_channels(
 
 
 @router.get(
+    "/channels/weixin/qrcode",
+    summary="Get WeChat iLink login QR code",
+    description="Fetch a one-time QR code image (base64 PNG) for WeChat iLink Bot login.",
+)
+async def get_weixin_qrcode(request: Request) -> dict:
+    """Return a QR code image (base64 PNG) for WeChat iLink Bot login."""
+    import httpx
+    from ..channels.weixin.client import ILinkClient, _DEFAULT_BASE_URL
+
+    # Use configured base_url if available
+    agent = None
+    base_url = _DEFAULT_BASE_URL
+    try:
+        from ..agent_context import get_agent_for_request
+        agent = await get_agent_for_request(request)
+        channels = agent.config.channels
+        if channels is not None:
+            weixin_cfg = getattr(channels, "weixin", None)
+            if weixin_cfg is not None:
+                base_url = getattr(weixin_cfg, "base_url", "") or _DEFAULT_BASE_URL
+    except Exception:
+        pass
+
+    client = ILinkClient(base_url=base_url)
+    await client.start()
+    try:
+        qr_data = await client.get_bot_qrcode()
+    except (httpx.HTTPError, Exception) as exc:
+        raise HTTPException(status_code=502, detail=f"WeChat QR code fetch failed: {exc}") from exc
+    finally:
+        await client.stop()
+
+    qrcode_img = qr_data.get("qrcode_img_content", "")
+    qrcode = qr_data.get("qrcode", "")
+    if not qrcode_img and not qrcode:
+        raise HTTPException(status_code=502, detail="WeChat returned empty QR code data")
+
+    return {"qrcode_img": qrcode_img, "qrcode": qrcode}
+
+
+@router.get(
     "/channels/{channel_name}",
     response_model=ChannelConfigUnion,
     summary="Get channel config",

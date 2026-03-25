@@ -390,7 +390,11 @@
     "weixinBotTokenPlaceholder": "Auto-filled after QR login, or paste manually",
     "weixinBotTokenFile": "Token File Path",
     "weixinBotTokenFileTooltip": "Path to persist the bot token. Defaults to ~/.copaw/weixin_bot_token",
-    "weixinMediaDir": "Media Directory"
+    "weixinMediaDir": "Media Directory",
+    "weixinScanLogin": "Scan to Login",
+    "weixinGetQrcode": "Get Login QR Code",
+    "weixinScanHint": "Scan the QR code with WeChat, then click Save",
+    "weixinQrcodeFailed": "Failed to fetch QR code, please try again"
   },
   "sessions": {
     "title": "Sessions",
