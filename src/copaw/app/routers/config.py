@@ -208,6 +208,46 @@ async def get_weixin_qrcode(request: Request) -> dict:
 
 
 @router.get(
+    "/channels/weixin/qrcode/status",
+    summary="Poll WeChat iLink QR code scan status",
+)
+async def get_weixin_qrcode_status(
+    request: Request,
+    qrcode: str,
+) -> dict:
+    """Poll QR code scan status. Returns {status, bot_token, base_url}."""
+    import httpx
+    from ..channels.weixin.client import ILinkClient, _DEFAULT_BASE_URL
+
+    base_url = _DEFAULT_BASE_URL
+    try:
+        from ..agent_context import get_agent_for_request
+        agent = await get_agent_for_request(request)
+        channels = agent.config.channels
+        if channels is not None:
+            weixin_cfg = getattr(channels, "weixin", None)
+            if weixin_cfg is not None:
+                base_url = getattr(weixin_cfg, "base_url", "") or _DEFAULT_BASE_URL
+    except Exception:
+        pass
+
+    client = ILinkClient(base_url=base_url)
+    await client.start()
+    try:
+        data = await client.get_qrcode_status(qrcode)
+    except (httpx.HTTPError, Exception) as exc:
+        raise HTTPException(status_code=502, detail=f"WeChat status check failed: {exc}") from exc
+    finally:
+        await client.stop()
+
+    return {
+        "status": data.get("status", "waiting"),
+        "bot_token": data.get("bot_token", ""),
+        "base_url": data.get("baseurl", ""),
+    }
+
+
+@router.get(
     "/channels/{channel_name}",
     response_model=ChannelConfigUnion,
     summary="Get channel config",

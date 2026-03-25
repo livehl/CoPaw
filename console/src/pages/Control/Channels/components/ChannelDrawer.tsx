@@ -134,14 +134,41 @@ export function ChannelDrawer({
   // WeChat QR code state
   const [weixinQrcodeImg, setWeixinQrcodeImg] = useState<string>("");
   const [weixinQrcodeLoading, setWeixinQrcodeLoading] = useState(false);
+  const weixinPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopWeixinPoll = useCallback(() => {
+    if (weixinPollRef.current) {
+      clearInterval(weixinPollRef.current);
+      weixinPollRef.current = null;
+    }
+  }, []);
 
   const handleFetchWeixinQrcode = useCallback(async () => {
+    stopWeixinPoll();
     setWeixinQrcodeLoading(true);
     setWeixinQrcodeImg("");
     try {
       const data = await api.getWeixinQrcode();
       if (data.qrcode_img) {
         setWeixinQrcodeImg(data.qrcode_img);
+        // Start polling for scan confirmation
+        weixinPollRef.current = setInterval(async () => {
+          try {
+            const s = await api.getWeixinQrcodeStatus(data.qrcode);
+            if (s.status === "confirmed" && s.bot_token) {
+              form.setFieldsValue({ bot_token: s.bot_token });
+              setWeixinQrcodeImg("");
+              stopWeixinPoll();
+              message.success(t("channels.weixinLoginSuccess"));
+            } else if (s.status === "expired") {
+              stopWeixinPoll();
+              setWeixinQrcodeImg("");
+              message.warning(t("channels.weixinQrcodeExpired"));
+            }
+          } catch {
+            // ignore poll errors
+          }
+        }, 2000);
       } else {
         message.error(t("channels.weixinQrcodeFailed"));
       }
@@ -150,7 +177,7 @@ export function ChannelDrawer({
     } finally {
       setWeixinQrcodeLoading(false);
     }
-  }, [t]);
+  }, [t, form, stopWeixinPoll]);
 
   // Dynamically load the WeCom SDK script
   const loadWecomSDK = useCallback((): Promise<void> => {

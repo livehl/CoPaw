@@ -346,7 +346,9 @@
     "weixinScanLogin": "QRコードでログイン",
     "weixinGetQrcode": "ログインQRコードを取得",
     "weixinScanHint": "WeChatでQRコードをスキャンして、完了後に保存してください",
-    "weixinQrcodeFailed": "QRコードの取得に失敗しました。再試行してください"
+    "weixinQrcodeFailed": "QRコードの取得に失敗しました。再試行してください",
+    "weixinLoginSuccess": "WeChat ログイン成功、トークンが入力されました",
+    "weixinQrcodeExpired": "QRコードが期限切れです。再取得してください"
   },
   "sessions": {
     "title": "セッション",
