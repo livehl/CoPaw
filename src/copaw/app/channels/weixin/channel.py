@@ -708,7 +708,9 @@ class WeixinChannel(BaseChannel):
             or self._parse_user_id_from_handle(to_handle)
             or ""
         )
-        context_token = m.get("weixin_context_token", "") or self._user_context_tokens.get(to_user_id, "")
+        context_token = m.get("weixin_context_token", "") or (
+            self._user_context_tokens.get(to_user_id, "")
+        )
 
         if not to_user_id:
             logger.warning("weixin send_content_parts: no to_user_id")
@@ -758,7 +760,9 @@ class WeixinChannel(BaseChannel):
             or self._parse_user_id_from_handle(to_handle)
             or ""
         )
-        context_token = m.get("weixin_context_token", "") or self._user_context_tokens.get(to_user_id, "")
+        context_token = m.get("weixin_context_token", "") or (
+            self._user_context_tokens.get(to_user_id, "")
+        )
         prefix = m.get("bot_prefix", "") or self.bot_prefix or ""
         body = (prefix + "  " + text) if prefix and text else text
         if not body or not to_user_id:
