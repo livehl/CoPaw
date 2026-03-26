@@ -120,6 +120,9 @@ class WeixinChannel(BaseChannel):
         self._processed_ids: OrderedDict[str, None] = OrderedDict()
         self._processed_ids_lock = threading.Lock()
 
+        # Cache last context_token per user for proactive sends (heartbeat/cron)
+        self._user_context_tokens: Dict[str, str] = {}
+
     # ------------------------------------------------------------------
     # Factory methods
     # ------------------------------------------------------------------
@@ -608,6 +611,10 @@ class WeixinChannel(BaseChannel):
                         )
                 return
 
+            # Save latest context_token for proactive sends (heartbeat/cron)
+            if from_user_id and context_token:
+                self._user_context_tokens[from_user_id] = context_token
+
             session_id = self.resolve_session_id(from_user_id, meta)
             native = {
                 "channel_id": self.channel,
@@ -701,7 +708,7 @@ class WeixinChannel(BaseChannel):
             or self._parse_user_id_from_handle(to_handle)
             or ""
         )
-        context_token = m.get("weixin_context_token", "")
+        context_token = m.get("weixin_context_token", "") or self._user_context_tokens.get(to_user_id, "")
 
         if not to_user_id:
             logger.warning("weixin send_content_parts: no to_user_id")
@@ -751,7 +758,7 @@ class WeixinChannel(BaseChannel):
             or self._parse_user_id_from_handle(to_handle)
             or ""
         )
-        context_token = m.get("weixin_context_token", "")
+        context_token = m.get("weixin_context_token", "") or self._user_context_tokens.get(to_user_id, "")
         prefix = m.get("bot_prefix", "") or self.bot_prefix or ""
         body = (prefix + "  " + text) if prefix and text else text
         if not body or not to_user_id:
