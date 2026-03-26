@@ -48,7 +48,7 @@ def aes_ecb_decrypt(data: bytes, key_b64: str) -> bytes:
     except ImportError as exc:
         raise ImportError(
             "pycryptodome is required for WeChat media decryption. "
-            "Install with: pip install pycryptodome"
+            "Install with: pip install pycryptodome",
         ) from exc
 
     # Auto-detect key format (mirrors official TypeScript parseAesKey logic)
@@ -78,7 +78,7 @@ def aes_ecb_decrypt(data: bytes, key_b64: str) -> bytes:
 
     if len(key) not in (16, 24, 32):
         raise ValueError(
-            f"Invalid AES key length: {len(key)} (from key_b64={raw[:20]!r})"
+            f"Invalid AES key length: {len(key)} (from key_b64={raw[:20]!r})",
         )
     cipher = AES.new(key, AES.MODE_ECB)
     decrypted = cipher.decrypt(data)
@@ -104,7 +104,7 @@ def aes_ecb_encrypt(data: bytes, key_b64: str) -> bytes:
     except ImportError as exc:
         raise ImportError(
             "pycryptodome is required for WeChat media encryption. "
-            "Install with: pip install pycryptodome"
+            "Install with: pip install pycryptodome",
         ) from exc
 
     key = base64.b64decode(key_b64)
