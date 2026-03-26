@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import sys
@@ -102,6 +103,9 @@ class WeixinChannel(BaseChannel):
             Path(bot_token_file).expanduser()
             if bot_token_file
             else _DEFAULT_TOKEN_FILE
+        )
+        self._context_tokens_file = (
+            self._bot_token_file.parent / "weixin_context_tokens.json"
         )
         self._media_dir = (
             Path(media_dir).expanduser() if media_dir else DEFAULT_MEDIA_DIR
@@ -291,6 +295,47 @@ class WeixinChannel(BaseChannel):
             logger.info("weixin: bot_token saved to %s", self._bot_token_file)
         except Exception:
             logger.warning("weixin: failed to save token file", exc_info=True)
+
+    def _load_context_tokens(self) -> None:
+        """Load persisted context_tokens from file into memory."""
+        try:
+            if self._context_tokens_file.exists():
+                data = json.loads(
+                    self._context_tokens_file.read_text(encoding="utf-8"),
+                )
+                if isinstance(data, dict):
+                    self._user_context_tokens = {
+                        k: v
+                        for k, v in data.items()
+                        if isinstance(k, str) and isinstance(v, str)
+                    }
+                    logger.info(
+                        "weixin: loaded %d context_tokens from %s",
+                        len(self._user_context_tokens),
+                        self._context_tokens_file,
+                    )
+        except Exception:
+            logger.debug(
+                "weixin: failed to load context_tokens file",
+                exc_info=True,
+            )
+
+    def _save_context_tokens(self) -> None:
+        """Persist current context_tokens dict to file."""
+        try:
+            self._context_tokens_file.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            self._context_tokens_file.write_text(
+                json.dumps(self._user_context_tokens, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.debug(
+                "weixin: failed to save context_tokens file",
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # Message dedup
@@ -614,6 +659,7 @@ class WeixinChannel(BaseChannel):
             # Save latest context_token for proactive sends (heartbeat/cron)
             if from_user_id and context_token:
                 self._user_context_tokens[from_user_id] = context_token
+                self._save_context_tokens()
 
             session_id = self.resolve_session_id(from_user_id, meta)
             native = {
@@ -782,6 +828,9 @@ class WeixinChannel(BaseChannel):
         # Resolve token: config > token file
         if not self.bot_token:
             self.bot_token = self._load_token_from_file()
+
+        # Load persisted context_tokens for proactive sends
+        self._load_context_tokens()
 
         # If still no token, do QR code login with a temporary client
         if not self.bot_token:
