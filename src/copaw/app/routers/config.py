@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import segno
 from datetime import datetime, timezone
 from typing import Any, List, Optional
+
+import segno
 
 from fastapi import APIRouter, Body, HTTPException, Path, Request
 from pydantic import BaseModel
