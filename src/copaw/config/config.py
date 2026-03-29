@@ -182,15 +182,26 @@ class WeixinConfig(BaseChannelConfig):
 
     bot_token:      Bearer token obtained after QR code login.
     bot_token_file: Path to persist/load the bot_token
-                    (default ~/.copaw/weixin_bot_token).
+                    (default: WORKING_DIR/weixin_bot_token, respects
+                    COPAW_WORKING_DIR env var).
     base_url:       iLink API base URL (leave empty to use default).
     media_dir:      Local directory for downloaded media files.
+                    Default: WORKING_DIR/media (respects COPAW_WORKING_DIR).
+    
+    Note: Weixin channel does NOT support bot_prefix, filter_tool_messages,
+    filter_thinking, or require_mention.
     """
 
     bot_token: str = ""
     bot_token_file: str = ""
     base_url: str = ""
     media_dir: Optional[str] = None
+    
+    # Override base class fields to exclude unsupported options
+    bot_prefix: str = ""  # Not supported
+    filter_tool_messages: bool = False  # Not supported
+    filter_thinking: bool = False  # Not supported
+    require_mention: bool = False  # Not supported
 
 
 class ChannelConfig(BaseModel):

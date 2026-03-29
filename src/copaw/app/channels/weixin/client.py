@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8
 """iLink Bot HTTP client for WeChat (WeChat personal account Bot API).
 
 All iLink API endpoints live under https://ilinkai.weixin.qq.com.
@@ -9,19 +9,31 @@ Authentication flow:
 2. Poll GET /ilink/bot/get_qrcode_status?qrcode=<qrcode> until confirmed
 3. Save bot_token + baseurl from the confirmed response
 4. Use bearer token for all subsequent requests
+
+Media upload flow:
+1. Call getuploadurl to get CDN upload URL and AES key
+2. Encrypt media data with AES-128-ECB + PKCS7 padding
+3. Upload encrypted data to CDN
+4. Use returned CDN URL in sendmessage
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
 
-from .utils import aes_ecb_decrypt, make_headers
+from .utils import (
+    aes_ecb_decrypt,
+    aes_ecb_encrypt,
+    generate_aes_key_b64,
+    make_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +42,16 @@ _CHANNEL_VERSION = "2.0.1"
 # Long-poll hold time is up to 35 seconds (server-controlled)
 _GETUPDATES_TIMEOUT = 45.0
 _DEFAULT_TIMEOUT = 15.0
+
+# CDN base URL for media upload/download
+_CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c"
+
+# Message item types (for item_list in sendmessage)
+MESSAGE_ITEM_TYPE_TEXT = 1
+MESSAGE_ITEM_TYPE_IMAGE = 2
+MESSAGE_ITEM_TYPE_VOICE = 3
+MESSAGE_ITEM_TYPE_FILE = 4
+MESSAGE_ITEM_TYPE_VIDEO = 5
 
 
 class ILinkClient:
@@ -316,3 +338,316 @@ class ILinkClient:
         if aes_key_b64:
             data = aes_ecb_decrypt(data, aes_key_b64)
         return data
+
+    # ------------------------------------------------------------------
+    # Media upload APIs
+    # ------------------------------------------------------------------
+
+    async def getuploadurl(
+        self,
+        file_type: str,
+        file_size: int,
+        file_ext: str = "",
+    ) -> Dict[str, Any]:
+        """Request CDN upload URL and AES key for media upload.
+
+        Args:
+            file_type: One of "image", "file", "voice", "video".
+            file_size: Size of the file in bytes (before encryption).
+            file_ext: File extension (e.g. "jpg", "png", "mp4", "pdf").
+
+        Returns:
+            Dict with keys:
+                upload_url: CDN upload URL.
+                aes_key: Base64-encoded AES-128 key for encryption.
+                media_id: Media identifier (may be used in sendmessage).
+        """
+        body: Dict[str, Any] = {
+            "file_type": file_type,
+            "file_size": file_size,
+            "base_info": {"channel_version": _CHANNEL_VERSION},
+        }
+        if file_ext:
+            body["file_ext"] = file_ext
+        return await self._post("ilink/bot/getuploadurl", body)
+
+    async def upload_media(
+        self,
+        data: bytes,
+        file_type: str,
+        file_ext: str = "",
+        aes_key_b64: str = "",
+    ) -> Dict[str, Any]:
+        """Upload media to WeChat CDN with AES encryption.
+
+        Flow:
+        1. Get upload URL and AES key from getuploadurl (or use provided key).
+        2. Encrypt data with AES-128-ECB.
+        3. Upload to CDN.
+
+        Args:
+            data: Raw media bytes to upload.
+            file_type: One of "image", "file", "voice", "video".
+            file_ext: File extension (e.g. "jpg", "png", "mp4", "pdf").
+            aes_key_b64: Optional pre-generated AES key; if empty, one will
+                be generated internally and returned.
+
+        Returns:
+            Dict with keys:
+                cdn_url: CDN URL for the uploaded media.
+                aes_key: Base64-encoded AES key used for encryption.
+                media_id: Media identifier (if provided by API).
+        """
+        assert self._client is not None, "ILinkClient not started"
+
+        # Step 1: Get upload URL
+        upload_info = await self.getuploadurl(file_type, len(data), file_ext)
+        upload_url = upload_info.get("upload_url", "")
+        if not upload_url:
+            raise ValueError(
+                f"getuploadurl did not return upload_url: {upload_info}",
+            )
+
+        # Use provided key or the one from API response
+        aes_key = aes_key_b64 or upload_info.get("aes_key", "")
+        if not aes_key:
+            aes_key = generate_aes_key_b64()
+
+        # Step 2: Encrypt data
+        encrypted_data = aes_ecb_encrypt(data, aes_key)
+
+        # Step 3: Upload to CDN
+        # The upload_url might be a full URL or relative path
+        if upload_url.startswith("http"):
+            full_upload_url = upload_url
+        else:
+            full_upload_url = f"{_CDN_BASE_URL}/{upload_url.lstrip('/')}"
+
+        resp = await self._client.post(
+            full_upload_url,
+            content=encrypted_data,
+            headers={"Content-Type": "application/octet-stream"},
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+
+        # Parse response - might be JSON or contain the CDN URL
+        try:
+            result = resp.json()
+        except Exception:
+            result = {}
+
+        # Extract cdn_url from response or construct it
+        cdn_url = result.get("cdn_url", "") or result.get("url", "")
+        if not cdn_url:
+            # Some responses may return the URL in different fields
+            cdn_url = result.get("media_id", "")
+
+        return {
+            "cdn_url": cdn_url,
+            "aes_key": aes_key,
+            "media_id": result.get("media_id", ""),
+            "raw_response": result,
+        }
+
+    # ------------------------------------------------------------------
+    # Send media message helpers
+    # ------------------------------------------------------------------
+
+    async def send_image(
+        self,
+        to_user_id: str,
+        image_data: bytes,
+        context_token: str,
+        file_ext: str = "jpg",
+    ) -> Dict[str, Any]:
+        """Send an image message.
+
+        Args:
+            to_user_id: Recipient user ID.
+            image_data: Raw image bytes.
+            context_token: context_token from the inbound message.
+            file_ext: Image extension (default "jpg").
+
+        Returns:
+            API response dict.
+        """
+        upload_result = await self.upload_media(
+            image_data,
+            file_type="image",
+            file_ext=file_ext,
+        )
+        return await self._send_media_message(
+            to_user_id=to_user_id,
+            context_token=context_token,
+            item_type=MESSAGE_ITEM_TYPE_IMAGE,
+            media_url=upload_result["cdn_url"],
+            aes_key=upload_result["aes_key"],
+            file_ext=file_ext,
+        )
+
+    async def send_file(
+        self,
+        to_user_id: str,
+        file_data: bytes,
+        filename: str,
+        context_token: str,
+    ) -> Dict[str, Any]:
+        """Send a file message.
+
+        Args:
+            to_user_id: Recipient user ID.
+            file_data: Raw file bytes.
+            filename: Display filename (used for extension detection).
+            context_token: context_token from the inbound message.
+
+        Returns:
+            API response dict.
+        """
+        file_ext = os.path.splitext(filename)[1].lstrip(".") or "bin"
+        upload_result = await self.upload_media(
+            file_data,
+            file_type="file",
+            file_ext=file_ext,
+        )
+        return await self._send_media_message(
+            to_user_id=to_user_id,
+            context_token=context_token,
+            item_type=MESSAGE_ITEM_TYPE_FILE,
+            media_url=upload_result["cdn_url"],
+            aes_key=upload_result["aes_key"],
+            filename=filename,
+            file_ext=file_ext,
+        )
+
+    async def send_voice(
+        self,
+        to_user_id: str,
+        voice_data: bytes,
+        context_token: str,
+        file_ext: str = "amr",
+    ) -> Dict[str, Any]:
+        """Send a voice message.
+
+        Args:
+            to_user_id: Recipient user ID.
+            voice_data: Raw voice bytes.
+            context_token: context_token from the inbound message.
+            file_ext: Voice format extension (default "amr").
+
+        Returns:
+            API response dict.
+        """
+        upload_result = await self.upload_media(
+            voice_data,
+            file_type="voice",
+            file_ext=file_ext,
+        )
+        return await self._send_media_message(
+            to_user_id=to_user_id,
+            context_token=context_token,
+            item_type=MESSAGE_ITEM_TYPE_VOICE,
+            media_url=upload_result["cdn_url"],
+            aes_key=upload_result["aes_key"],
+            file_ext=file_ext,
+        )
+
+    async def send_video(
+        self,
+        to_user_id: str,
+        video_data: bytes,
+        context_token: str,
+        file_ext: str = "mp4",
+    ) -> Dict[str, Any]:
+        """Send a video message.
+
+        Args:
+            to_user_id: Recipient user ID.
+            video_data: Raw video bytes.
+            context_token: context_token from the inbound message.
+            file_ext: Video format extension (default "mp4").
+
+        Returns:
+            API response dict.
+        """
+        upload_result = await self.upload_media(
+            video_data,
+            file_type="video",
+            file_ext=file_ext,
+        )
+        return await self._send_media_message(
+            to_user_id=to_user_id,
+            context_token=context_token,
+            item_type=MESSAGE_ITEM_TYPE_VIDEO,
+            media_url=upload_result["cdn_url"],
+            aes_key=upload_result["aes_key"],
+            file_ext=file_ext,
+        )
+
+    async def _send_media_message(
+        self,
+        to_user_id: str,
+        context_token: str,
+        item_type: int,
+        media_url: str,
+        aes_key: str,
+        file_ext: str = "",
+        filename: str = "",
+    ) -> Dict[str, Any]:
+        """Internal helper to send a media message via sendmessage.
+
+        Args:
+            to_user_id: Recipient user ID.
+            context_token: context_token from inbound message.
+            item_type: Message item type (IMAGE=2, VOICE=3, FILE=4, VIDEO=5).
+            media_url: CDN URL of the uploaded media.
+            aes_key: AES key used for encryption (sent to recipient).
+            file_ext: File extension.
+            filename: Filename (for file type only).
+
+        Returns:
+            API response dict.
+        """
+        item: Dict[str, Any] = {"type": item_type}
+
+        if item_type == MESSAGE_ITEM_TYPE_IMAGE:
+            item["image_item"] = {
+                "media": {
+                    "url": media_url,
+                    "aes_key": aes_key,
+                },
+            }
+        elif item_type == MESSAGE_ITEM_TYPE_VOICE:
+            item["voice_item"] = {
+                "media": {
+                    "url": media_url,
+                    "aes_key": aes_key,
+                },
+            }
+        elif item_type == MESSAGE_ITEM_TYPE_FILE:
+            item["file_item"] = {
+                "media": {
+                    "url": media_url,
+                    "aes_key": aes_key,
+                },
+                "filename": filename,
+            }
+        elif item_type == MESSAGE_ITEM_TYPE_VIDEO:
+            item["video_item"] = {
+                "media": {
+                    "url": media_url,
+                    "aes_key": aes_key,
+                },
+            }
+
+        return await self.sendmessage(
+            {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": str(uuid.uuid4()),
+                "message_type": 2,  # BOT
+                "message_state": 2,  # FINISH
+                "context_token": context_token,
+                "item_list": [item],
+            },
+        )

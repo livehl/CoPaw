@@ -462,7 +462,7 @@
     "weixinBotTokenTooltip": "Bearer-токен, полученный после входа по QR-коду. Оставьте пустым для запуска процедуры входа при старте.",
     "weixinBotTokenPlaceholder": "Заполняется автоматически после QR-входа или введите вручную",
     "weixinBotTokenFile": "Путь к файлу токена",
-    "weixinBotTokenFileTooltip": "Путь для сохранения Bot Token. По умолчанию: ~/.copaw/weixin_bot_token",
+    "weixinBotTokenFileTooltip": "Путь для сохранения Bot Token. По умолчанию: WORKING_DIR/weixin_bot_token (учитывает переменную окружения COPAW_WORKING_DIR)",
     "weixinMediaDir": "Директория медиафайлов",
     "weixinScanLogin": "Войти через QR-код",
     "weixinGetQrcode": "Получить QR-код для входа",
