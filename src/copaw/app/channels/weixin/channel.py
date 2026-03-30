@@ -47,7 +47,7 @@ from ..base import (
     OutgoingContentPart,
     ProcessHandler,
 )
-from ..utils import split_text
+from ..utils import file_url_to_local_path, split_text
 from .client import ILinkClient, _DEFAULT_BASE_URL
 
 logger = logging.getLogger(__name__)
@@ -827,6 +827,14 @@ class WeixinChannel(BaseChannel):
                 logger.warning("weixin: image part missing image_url")
                 return
 
+            # Handle file:// URLs
+            if image_url.startswith("file://"):
+                local_path = file_url_to_local_path(image_url)
+                if not local_path:
+                    logger.warning("weixin: invalid file URL: %s", image_url)
+                    return
+                image_url = local_path
+
             # Read image data from local file
             if image_url.startswith("/") or not image_url.startswith("http"):
                 path = Path(image_url)
@@ -859,6 +867,14 @@ class WeixinChannel(BaseChannel):
             if not video_url:
                 logger.warning("weixin: video part missing video_url")
                 return
+
+            # Handle file:// URLs
+            if video_url.startswith("file://"):
+                local_path = file_url_to_local_path(video_url)
+                if not local_path:
+                    logger.warning("weixin: invalid file URL: %s", video_url)
+                    return
+                video_url = local_path
 
             if video_url.startswith("/") or not video_url.startswith("http"):
                 path = Path(video_url)
@@ -893,6 +909,14 @@ class WeixinChannel(BaseChannel):
             if not file_url:
                 logger.warning("weixin: file part missing file_url")
                 return
+
+            # Handle file:// URLs
+            if file_url.startswith("file://"):
+                local_path = file_url_to_local_path(file_url)
+                if not local_path:
+                    logger.warning("weixin: invalid file URL: %s", file_url)
+                    return
+                file_url = local_path
 
             if file_url.startswith("/") or not file_url.startswith("http"):
                 path = Path(file_url)
