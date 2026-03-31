@@ -174,6 +174,12 @@ export function normalizeContentUrls(part: any): any {
 export function toDisplayUrl(url: string | undefined): string {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  // Skip if already a preview URL (avoid double prefix)
+  if (url.startsWith("/api/files/preview/")) return url;
+  if (url.startsWith("/files/preview/")) {
+    // Add /api prefix if missing
+    return chatApi.filePreviewUrl(url.slice("/files/preview".length));
+  }
   if (url.startsWith("file://")) url = url.replace("file://", "");
   return chatApi.filePreviewUrl(url.startsWith("/") ? url : `/${url}`);
 }

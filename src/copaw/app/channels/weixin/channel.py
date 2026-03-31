@@ -930,7 +930,6 @@ class WeixinChannel(BaseChannel):
                 return
 
             await self._client.send_file(to_user_id, data, filename, context_token)
-            logger.debug("weixin: sent file %s", file_url[:50])
         except Exception:
             logger.exception("weixin: failed to send file")
 

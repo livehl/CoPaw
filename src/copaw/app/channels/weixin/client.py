@@ -25,7 +25,7 @@ import hashlib
 import logging
 import os
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
@@ -33,7 +33,6 @@ import httpx
 from .utils import (
     aes_ecb_decrypt,
     aes_ecb_encrypt,
-    generate_aes_key_b64,
     make_headers,
 )
 
@@ -433,9 +432,11 @@ class ILinkClient:
         # Step 1: Generate AES key (16 bytes = 32 hex chars)
         aes_key_hex = uuid.uuid4().hex[:32]
         aes_key_bytes = bytes.fromhex(aes_key_hex)
+        # Convert to base64 for encryption function
+        aes_key_b64_for_encrypt = base64.b64encode(aes_key_bytes).decode()
 
         # Step 2: Encrypt data
-        encrypted_data = aes_ecb_encrypt(data, aes_key_hex)
+        encrypted_data = aes_ecb_encrypt(data, aes_key_b64_for_encrypt)
         encrypted_size = len(encrypted_data)
 
         # Step 3: Calculate raw file MD5
@@ -470,16 +471,11 @@ class ILinkClient:
                 encrypted_size,
             )
 
-        # Step 6: Build CDN upload URL
+        # Build CDN upload URL
         # Use upload_full_url directly if available (API v2.1+), otherwise build from upload_param
         if upload_full_url:
-            # upload_full_url already contains the full CDN URL with all params
             full_upload_url = upload_full_url
-            logger.debug("weixin CDN upload: using upload_full_url directly")
         elif upload_param:
-            # Build URL from upload_param (legacy API)
-            # Note: upload_param from API is base64-encoded and may contain special chars
-            # Need to URL-encode it for the query parameter
             from urllib.parse import quote
             encoded_param = quote(upload_param, safe='')
             full_upload_url = (
@@ -487,21 +483,10 @@ class ILinkClient:
                 f"encrypted_query_param={encoded_param}&"
                 f"filekey={filekey}"
             )
-            logger.debug(
-                "weixin CDN upload: built URL from upload_param "
-                "(param_len=%s, encoded_len=%s, filekey=%s)",
-                len(upload_param),
-                len(encoded_param),
-                filekey,
-            )
         else:
             raise ValueError(
                 f"getuploadurl did not return upload_url: {upload_info}",
             )
-        logger.debug(
-            "weixin CDN upload URL: %s...",
-            full_upload_url[:100],
-        )
 
         # Step 7: Upload to CDN
         resp = await self._client.post(
@@ -515,8 +500,14 @@ class ILinkClient:
         # Step 8: Get download param from response header
         download_param = resp.headers.get("x-encrypted-param", "")
         if not download_param:
-            logger.warning(
-                "weixin CDN upload response missing x-encrypted-param header"
+            # Try alternative header names (case-insensitive)
+            for key in resp.headers.keys():
+                if key.lower() == "x-encrypted-param":
+                    download_param = resp.headers[key]
+                    break
+        if not download_param:
+            raise ValueError(
+                "CDN upload response missing x-encrypted-param header"
             )
 
         return {
@@ -525,12 +516,7 @@ class ILinkClient:
             "filekey": filekey,
             "encrypted_size": encrypted_size,
             "raw_size": len(data),
-            "raw_response": {"status_code": resp.status_code},
         }
-
-    def _generate_filekey(self) -> str:
-        """Generate a unique filekey (16 bytes random hex = 32 chars)."""
-        return uuid.uuid4().hex[:32]
 
     # ------------------------------------------------------------------
     # Send media message helpers
@@ -562,10 +548,9 @@ class ILinkClient:
         )
         # Use download_param as encrypt_query_param (not full URL)
         download_param = upload_result["download_param"]
-        # Convert hex aes_key to base64 for API
-        aes_key_b64 = base64.b64encode(
-            bytes.fromhex(upload_result["aes_key"])
-        ).decode()
+        # aes_key format: base64(hex_string)
+        aes_key_hex = upload_result["aes_key"]
+        aes_key_b64 = base64.b64encode(aes_key_hex.encode("ascii")).decode()
         # Get encrypted file size for mid_size
         encrypted_size = upload_result.get("encrypted_size", len(image_data))
         return await self._send_media_message(
@@ -605,10 +590,8 @@ class ILinkClient:
         )
         # Use download_param as encrypt_query_param (not full URL)
         download_param = upload_result["download_param"]
-        # Convert hex aes_key to base64 for API
-        aes_key_b64 = base64.b64encode(
-            bytes.fromhex(upload_result["aes_key"])
-        ).decode()
+        aes_key_hex = upload_result["aes_key"]
+        aes_key_b64 = base64.b64encode(aes_key_hex.encode("ascii")).decode()
         # Get raw file size for len field
         raw_size = upload_result.get("raw_size", len(file_data))
         return await self._send_media_message(
@@ -648,10 +631,9 @@ class ILinkClient:
         )
         # Use download_param as encrypt_query_param (not full URL)
         download_param = upload_result["download_param"]
-        # Convert hex aes_key to base64 for API
-        aes_key_b64 = base64.b64encode(
-            bytes.fromhex(upload_result["aes_key"])
-        ).decode()
+        # aes_key format: base64(hex_string)
+        aes_key_hex = upload_result["aes_key"]
+        aes_key_b64 = base64.b64encode(aes_key_hex.encode("ascii")).decode()
         return await self._send_media_message(
             to_user_id=to_user_id,
             context_token=context_token,
@@ -687,10 +669,9 @@ class ILinkClient:
         )
         # Use download_param as encrypt_query_param (not full URL)
         download_param = upload_result["download_param"]
-        # Convert hex aes_key to base64 for API
-        aes_key_b64 = base64.b64encode(
-            bytes.fromhex(upload_result["aes_key"])
-        ).decode()
+        # aes_key format: base64(hex_string)
+        aes_key_hex = upload_result["aes_key"]
+        aes_key_b64 = base64.b64encode(aes_key_hex.encode("ascii")).decode()
         # Get encrypted file size for video_size
         encrypted_size = upload_result.get("encrypted_size", len(video_data))
         return await self._send_media_message(
@@ -772,14 +753,13 @@ class ILinkClient:
                 "video_size": video_size,
             }
 
-        return await self.sendmessage(
-            {
-                "from_user_id": "",
-                "to_user_id": to_user_id,
-                "client_id": str(uuid.uuid4()),
-                "message_type": 2,  # BOT
-                "message_state": 2,  # FINISH
-                "context_token": context_token,
-                "item_list": [item],
-            },
-        )
+        msg_payload = {
+            "from_user_id": "",
+            "to_user_id": to_user_id,
+            "client_id": str(uuid.uuid4()),
+            "message_type": 2,  # BOT
+            "message_state": 2,  # FINISH
+            "context_token": context_token,
+            "item_list": [item],
+        }
+        return await self.sendmessage(msg_payload)

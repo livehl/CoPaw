@@ -29,7 +29,7 @@
 ## 简介
 本文件面向运维与开发人员，提供CoPaw项目的Docker容器化部署完整指南。内容涵盖镜像构建（含多阶段构建与参数化）、docker-compose编排、Supervisor进程管理、日志与端口配置、数据卷与网络策略、以及镜像版本同步与发布流程。读者可据此在本地或生产环境中稳定运行CoPaw控制台与应用服务。
 
-**更新** 移除了llama.cpp和MLX本地模型后端依赖，简化了部署流程，专注于核心功能的容器化运行。
+**更新** 优化了Docker部署配置，改进依赖管理通过先复制pyproject.toml和setup.py文件以利用Docker层缓存，实施两阶段安装过程，使用--no-deps标志提升开发迭代时的重建速度。
 
 ## 项目结构
 与容器化部署直接相关的目录与文件如下：
@@ -66,10 +66,6 @@ A --> K["src/copaw/config/utils.py"]
 - [setup.py:1-5](file://setup.py#L1-L5)
 - [src/copaw/config/utils.py:366-397](file://src/copaw/config/utils.py#L366-L397)
 
-章节来源
-- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
-- [docker-compose.yml:1-23](file://docker-compose.yml#L1-L23)
-
 ## 核心组件
 - 多阶段Dockerfile：前端构建与后端打包分离，减少最终镜像体积并提升安全性。
 - Supervisor进程管理：统一启动DBus、Xvfb、XFCE桌面会话与CoPaw应用进程，并自动拉起失败任务。
@@ -78,15 +74,7 @@ A --> K["src/copaw/config/utils.py"]
 - 构建脚本：封装镜像构建参数（通道过滤、端口等），支持自定义标签与额外构建参数。
 - 版本同步脚本：通过Buildx镜像工具将"预发布"标签升级为"latest"。
 
-**更新** 移除了llama.cpp和MLX相关的构建参数和依赖安装，简化了镜像构建流程。
-
-章节来源
-- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
-- [deploy/config/supervisord.conf.template:1-40](file://deploy/config/supervisord.conf.template#L1-L40)
-- [deploy/entrypoint.sh:1-10](file://deploy/entrypoint.sh#L1-L10)
-- [docker-compose.yml:1-23](file://docker-compose.yml#L1-L23)
-- [scripts/docker_build.sh:1-32](file://scripts/docker_build.sh#L1-L32)
-- [scripts/docker_sync_latest.sh:1-77](file://scripts/docker_sync_latest.sh#L1-L77)
+**更新** 优化了依赖管理策略，通过分阶段安装提升构建效率和缓存利用率。
 
 ## 架构总览
 下图展示容器启动时的关键交互：入口脚本注入端口变量，Supervisor按优先级启动系统服务与应用；应用监听指定端口并通过Playwright使用系统Chromium。
@@ -115,7 +103,7 @@ PORT <- --> APP
 
 ### Dockerfile 多阶段构建与配置项
 - 前端构建阶段（console-builder）：基于Node基础镜像，安装依赖并执行构建，产物输出至dist目录。
-- 运行时阶段：安装Python、Chromium、Supervisor等运行时依赖；启用无沙箱模式以适配容器环境；复制前端构建产物；安装Python包（移除了llama.cpp和MLX相关依赖）；初始化工作目录与默认配置；暴露应用端口并设置入口命令。
+- 运行时阶段：安装Python、Chromium、Supervisor等运行时依赖；启用无沙箱模式以适配容器环境；复制前端构建产物；**优化的依赖安装流程**：先复制pyproject.toml和setup.py以利用Docker层缓存，然后安装依赖（缓存层），最后安装包本身（使用--no-deps标志）；初始化工作目录与默认配置；暴露应用端口并设置入口命令。
 - 关键构建参数与环境变量：
   - 通道过滤：COPAW_DISABLED_CHANNELS（黑名单，推荐）与COPAW_ENABLED_CHANNELS（白名单）。两者同时设置时白名单优先。
   - 端口：COPAW_PORT，默认8088，可通过容器运行时覆盖。
@@ -124,15 +112,18 @@ PORT <- --> APP
   - Chromium与Playwright：通过环境变量指向系统Chromium并禁用自动下载浏览器。
   - X11虚拟帧缓冲与桌面：Xvfb、XFCE、DBus，配合DISPLAY=:1提供图形界面能力。
 
-**更新** 移除了llama.cpp和MLX相关的可选依赖安装，简化了运行时依赖列表。
+**更新** 实施了两阶段安装过程：先安装依赖（缓存层），再安装包本身（使用--no-deps标志），显著提升开发迭代时的重建速度。
 
 ```mermaid
 flowchart TD
 Start(["开始"]) --> Stage1["Stage1: 构建前端<br/>复制console并执行构建"]
 Stage1 --> Stage2["Stage2: 运行时镜像<br/>安装系统依赖与Python"]
-Stage2 --> CopyConsole["复制前端构建产物到应用目录"]
-CopyConsole --> PipInstall["安装Python核心依赖"]
-PipInstall --> Init["初始化工作目录与默认配置"]
+Stage2 --> CopyDeps["复制依赖文件<br/>pyproject.toml, setup.py, README.md"]
+CopyDeps --> InstallDeps["安装依赖<br/>pip install --no-cache-dir -r /tmp/requirements.txt"]
+InstallDeps --> CopySrc["复制源码<br/>src目录"]
+CopySrc --> CopyConsole["复制前端构建产物<br/>到应用目录"]
+CopyConsole --> InstallPackage["安装包本身<br/>pip install --no-cache-dir --no-deps -e ."]
+InstallPackage --> Init["初始化工作目录与默认配置"]
 Init --> Env["设置环境变量与端口"]
 Env --> Expose["暴露应用端口"]
 Expose --> Cmd["设置入口命令"]
@@ -140,9 +131,9 @@ Cmd --> End(["结束"])
 ```
 
 图表来源
-- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
+- [deploy/Dockerfile:85-96](file://deploy/Dockerfile#L85-L96)
 
-章节来源
+**Section sources**
 - [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
 - [src/copaw/config/utils.py:342-347](file://src/copaw/config/utils.py#L342-L347)
 
@@ -177,7 +168,7 @@ P --- S
 图表来源
 - [docker-compose.yml:3-23](file://docker-compose.yml#L3-L23)
 
-章节来源
+**Section sources**
 - [docker-compose.yml:1-23](file://docker-compose.yml#L1-L23)
 
 ### 入口脚本与Supervisor配置
@@ -213,7 +204,7 @@ App-->>Entrypoint : 应用就绪
 - [deploy/entrypoint.sh:1-10](file://deploy/entrypoint.sh#L1-L10)
 - [deploy/config/supervisord.conf.template:1-40](file://deploy/config/supervisord.conf.template#L1-L40)
 
-章节来源
+**Section sources**
 - [deploy/entrypoint.sh:1-10](file://deploy/entrypoint.sh#L1-L10)
 - [deploy/config/supervisord.conf.template:1-40](file://deploy/config/supervisord.conf.template#L1-L40)
 
@@ -226,7 +217,7 @@ App-->>Entrypoint : 应用就绪
   - 通过Docker Buildx与imagetools将"pre"标签复制为"latest"，分别推送至阿里云镜像仓库与Docker Hub。
   - 自动安装/校验buildx插件与imagetools能力。
 
-**更新** 移除了llama.cpp和MLX相关的构建参数处理，简化了构建脚本逻辑。
+**更新** 优化了依赖管理策略，提升了构建效率和缓存利用率。
 
 ```mermaid
 flowchart TD
@@ -243,7 +234,7 @@ H --> I["将 pre 标签复制为 latestDocker Hub"]
 - [scripts/docker_build.sh:1-32](file://scripts/docker_build.sh#L1-L32)
 - [scripts/docker_sync_latest.sh:1-77](file://scripts/docker_sync_latest.sh#L1-L77)
 
-章节来源
+**Section sources**
 - [scripts/docker_build.sh:1-32](file://scripts/docker_build.sh#L1-L32)
 - [scripts/docker_sync_latest.sh:1-77](file://scripts/docker_sync_latest.sh#L1-L77)
 
@@ -255,7 +246,7 @@ H --> I["将 pre 标签复制为 latestDocker Hub"]
 - 容器检测：
   - 运行时可通过环境变量或探测文件系统判断是否处于容器中，便于条件化配置。
 
-章节来源
+**Section sources**
 - [deploy/Dockerfile:14-25](file://deploy/Dockerfile#L14-L25)
 - [deploy/Dockerfile:74-78](file://deploy/Dockerfile#L74-L78)
 - [src/copaw/config/utils.py:366-397](file://src/copaw/config/utils.py#L366-L397)
@@ -263,10 +254,10 @@ H --> I["将 pre 标签复制为 latestDocker Hub"]
 ## 依赖关系分析
 - 构建期依赖：Node基础镜像用于前端构建；Python基础镜像用于后端打包。
 - 运行期依赖：Python运行时、Chromium、Supervisor、Xvfb、XFCE、DBus等。
-- 包管理：pyproject.toml声明主依赖与可选特性（移除了llama.cpp和MLX相关依赖），setup.py作为打包入口。
+- 包管理：pyproject.toml声明主依赖与可选特性，setup.py作为打包入口。
 - 构建排除：.dockerignore避免将测试、IDE缓存、Node模块与日志等带入镜像，仅保留必要的前端dist。
 
-**更新** 移除了llama.cpp和MLX相关的可选依赖，简化了依赖管理。
+**更新** 优化了依赖管理策略，通过分阶段安装提升构建效率。
 
 ```mermaid
 graph LR
@@ -285,19 +276,20 @@ IGN[".dockerignore"] -. 排除 .-> DF
 - [pyproject.toml:1-103](file://pyproject.toml#L1-L103)
 - [setup.py:1-5](file://setup.py#L1-L5)
 
-章节来源
+**Section sources**
 - [.dockerignore:1-59](file://.dockerignore#L1-L59)
 - [pyproject.toml:1-103](file://pyproject.toml#L1-L103)
 - [setup.py:1-5](file://setup.py#L1-L5)
 
 ## 性能考虑
 - 多阶段构建：分离前端构建与运行时镜像，显著减小最终镜像体积，缩短拉取时间。
+- **优化的依赖管理**：通过先复制依赖文件（pyproject.toml、setup.py）并安装依赖（缓存层），再安装包本身（使用--no-deps标志），大幅提升开发迭代时的重建速度。
 - 无沙箱Chromium：容器内启用无沙箱模式，降低安全风险但提升兼容性；建议结合网络隔离与最小权限原则。
 - 进程管理：Supervisor统一管理多个进程，避免僵尸进程与资源泄漏；优先级设置确保关键服务先启动。
 - 端口与网络：仅映射必要端口，限制外网访问；通过本地回环绑定减少暴露面。
 - 日志：各进程独立日志文件，便于定位问题；建议结合外部日志收集系统集中存储。
 
-**更新** 移除了本地模型后端相关的性能优化考虑，简化了性能分析。
+**更新** 新增了依赖管理优化策略，显著提升开发迭代效率。
 
 ## 故障排查指南
 - 应用无法访问或端口不通
@@ -319,10 +311,14 @@ IGN[".dockerignore"] -. 排除 .-> DF
 - 版本标签未更新
   - 确认Docker Buildx与imagetools可用。
   - 检查镜像仓库凭证与网络连通性。
+- **依赖安装问题**
+  - 检查pyproject.toml中的依赖版本是否兼容。
+  - 确认网络连接正常，pip源可达。
+  - 如需重新安装依赖，使用--no-cache-dir参数。
 
-**更新** 移除了与llama.cpp和MLX相关的故障排查内容，简化了故障排查指南。
+**更新** 新增了依赖安装相关的故障排查指导。
 
-章节来源
+**Section sources**
 - [deploy/config/supervisord.conf.template:1-40](file://deploy/config/supervisord.conf.template#L1-L40)
 - [deploy/entrypoint.sh:1-10](file://deploy/entrypoint.sh#L1-L10)
 - [docker-compose.yml:14-15](file://docker-compose.yml#L14-L15)
@@ -331,9 +327,9 @@ IGN[".dockerignore"] -. 排除 .-> DF
 - [src/copaw/config/utils.py:342-347](file://src/copaw/config/utils.py#L342-L347)
 
 ## 结论
-通过多阶段Dockerfile、Supervisor进程管理与docker-compose编排，CoPaw可在容器中稳定运行并提供图形化桌面与多通道能力。合理设置端口、通道过滤与数据卷，结合版本同步脚本，可实现从构建到发布的自动化流程。移除了llama.cpp和MLX本地模型后端依赖后，部署流程更加简洁高效，建议在生产环境中进一步强化网络安全、日志监控与备份策略。
+通过多阶段Dockerfile、Supervisor进程管理与docker-compose编排，CoPaw可在容器中稳定运行并提供图形化桌面与多通道能力。合理设置端口、通道过滤与数据卷，结合版本同步脚本，可实现从构建到发布的自动化流程。**优化的依赖管理策略**通过分阶段安装和缓存利用，显著提升了开发迭代效率，建议在生产环境中进一步强化网络安全、日志监控与备份策略。
 
-**更新** 移除了本地模型后端相关的部署复杂度，简化了整体部署体验。
+**更新** 新增了依赖管理优化带来的性能提升说明。
 
 ## 附录
 
@@ -346,7 +342,7 @@ IGN[".dockerignore"] -. 排除 .-> DF
 - 重启
   - docker compose restart 或 docker restart copaw
 
-章节来源
+**Section sources**
 - [docker-compose.yml:13-22](file://docker-compose.yml#L13-L22)
 
 ### 环境变量参考表
@@ -357,7 +353,7 @@ IGN[".dockerignore"] -. 排除 .-> DF
 
 **更新** 移除了与llama.cpp和MLX相关的环境变量说明。
 
-章节来源
+**Section sources**
 - [deploy/Dockerfile:14-25](file://deploy/Dockerfile#L14-L25)
 - [deploy/Dockerfile:74-78](file://deploy/Dockerfile#L74-L78)
 - [src/copaw/config/utils.py:342-347](file://src/copaw/config/utils.py#L342-L347)
@@ -370,3 +366,17 @@ IGN[".dockerignore"] -. 排除 .-> DF
   - Whisper：语音转文字功能
 
 **新增** 说明Docker镜像中不包含的可选依赖类型。
+
+### 依赖管理优化详情
+- **分阶段安装策略**：
+  - 第一阶段：复制依赖文件（pyproject.toml、setup.py、README.md）并安装依赖，形成缓存层
+  - 第二阶段：复制源码和前端构建产物，安装包本身（使用--no-deps标志）
+- **缓存优化效果**：
+  - 依赖文件变更时只重新安装依赖层
+  - 源码变更时跳过依赖安装，直接重新安装包
+  - 显著提升开发迭代时的构建速度
+
+**Section sources**
+- [deploy/Dockerfile:85-96](file://deploy/Dockerfile#L85-L96)
+- [pyproject.toml:1-103](file://pyproject.toml#L1-L103)
+- [setup.py:1-5](file://setup.py#L1-L5)
