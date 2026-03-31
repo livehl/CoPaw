@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Download, Monitor, Laptop } from "lucide-react";
-import { type Lang } from "../i18n";
-import { type SiteConfig } from "../config";
-import { Nav } from "../components/Nav";
-import { Footer } from "../components/Footer";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { useSiteConfig } from "@/config-context";
 import "../styles/downloads.css";
 
 interface FileMetadata {
@@ -64,26 +63,26 @@ interface PlatformCardProps {
   fileMetadata: FileMetadata;
   allVersions: string[];
   isRecommended: boolean;
-  lang: Lang;
 }
 
 function PlatformCard({
   fileMetadata,
   allVersions,
   isRecommended,
-  lang,
 }: PlatformCardProps) {
+  const { t, i18n } = useTranslation();
+  const isZh = i18n.resolvedLanguage === "zh";
   const [selectedVersion, setSelectedVersion] = useState(fileMetadata.version);
 
-  const platformName =
-    lang === "zh" ? fileMetadata.name["zh-CN"] : fileMetadata.name["en-US"];
-  const description =
-    lang === "zh"
-      ? fileMetadata.description["zh-CN"]
-      : fileMetadata.description["en-US"];
+  const platformName = isZh
+    ? fileMetadata.name["zh-CN"]
+    : fileMetadata.name["en-US"];
+  const description = isZh
+    ? fileMetadata.description["zh-CN"]
+    : fileMetadata.description["en-US"];
   const IconComponent = platformIcons[fileMetadata.platform] || Monitor;
   const updatedDate = new Date(fileMetadata.updated_at).toLocaleDateString(
-    lang === "zh" ? "zh-CN" : "en-US",
+    isZh ? "zh-CN" : "en-US",
   );
   const downloadUrl = `https://download.copaw.agentscope.io${fileMetadata.url}`;
 
@@ -98,7 +97,7 @@ function PlatformCard({
             {platformName}
             {isRecommended && (
               <span className="recommended-badge">
-                {lang === "zh" ? "推荐" : "Recommended"}
+                {t("downloads.recommended")}
               </span>
             )}
           </h4>
@@ -110,7 +109,7 @@ function PlatformCard({
       {allVersions.length > 1 && (
         <div className="version-selector">
           <label className="version-label">
-            {lang === "zh" ? "选择版本" : "Select Version"}
+            {t("downloads.selectVersion")}
           </label>
           <select
             className="version-dropdown"
@@ -119,8 +118,7 @@ function PlatformCard({
           >
             {allVersions.map((version, index) => (
               <option key={version} value={version}>
-                v{version}{" "}
-                {index === 0 ? `(${lang === "zh" ? "最新" : "Latest"})` : ""}
+                v{version} {index === 0 ? `(${t("downloads.latest")})` : ""}
               </option>
             ))}
           </select>
@@ -129,26 +127,20 @@ function PlatformCard({
 
       <a href={downloadUrl} className="download-btn" download>
         <Download size={18} strokeWidth={2.5} />
-        {lang === "zh" ? "下载" : "Download"}
+        {t("downloads.download")}
       </a>
 
       <div className="file-details">
         <div className="detail-row">
-          <span className="detail-label">
-            {lang === "zh" ? "版本" : "Version"}:
-          </span>
+          <span className="detail-label">{t("downloads.version")}:</span>
           <span>{fileMetadata.version}</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">
-            {lang === "zh" ? "大小" : "Size"}:
-          </span>
+          <span className="detail-label">{t("downloads.size")}:</span>
           <span>{fileMetadata.size}</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">
-            {lang === "zh" ? "更新时间" : "Updated"}:
-          </span>
+          <span className="detail-label">{t("downloads.updated")}:</span>
           <span>{updatedDate}</span>
         </div>
         <div className="sha256-row">
@@ -160,17 +152,15 @@ function PlatformCard({
   );
 }
 
-interface DownloadsProps {
-  config: SiteConfig;
-  lang: Lang;
-  onLangClick: () => void;
-}
-
-export function Downloads({ config, lang, onLangClick }: DownloadsProps) {
+export function Downloads() {
+  const { t, i18n } = useTranslation();
+  const isZh = i18n.resolvedLanguage === "zh";
+  const { docsPath } = useSiteConfig();
   const [loading, setLoading] = useState(true);
   const [isEmpty, setIsEmpty] = useState(false);
   const [desktopIndex, setDesktopIndex] = useState<DesktopIndex | null>(null);
   const userOS = detectOS();
+  const docsBase = docsPath.replace(/\/$/, "") || "/docs";
 
   useEffect(() => {
     async function loadDownloads() {
@@ -245,47 +235,27 @@ export function Downloads({ config, lang, onLangClick }: DownloadsProps) {
 
   return (
     <div className="downloads-page">
-      <Nav
-        projectName={config.projectName}
-        lang={lang}
-        onLangClick={onLangClick}
-        docsPath={config.docsPath}
-        repoUrl={config.repoUrl}
-      />
-
       <div className="downloads-container">
         <header className="downloads-header">
-          <h1>{lang === "zh" ? "下载资源" : "Downloads"}</h1>
-          <p className="subtitle">
-            {lang === "zh"
-              ? "获取 CoPaw 的各种安装包和工具"
-              : "Get CoPaw installers, tools, and resources"}
-          </p>
+          <h1>{t("downloads.title")}</h1>
+          <p className="subtitle">{t("downloads.subtitle")}</p>
         </header>
 
         {loading && (
           <div className="loading">
             <div className="spinner"></div>
-            <p>{lang === "zh" ? "加载中..." : "Loading..."}</p>
+            <p>{t("downloads.loading")}</p>
           </div>
         )}
 
         {isEmpty && !loading && (
           <div className="empty-state">
             <div className="empty-icon">📦</div>
-            <h3>
-              {lang === "zh" ? "暂无可下载内容" : "No downloads available yet"}
-            </h3>
-            <p>
-              {lang === "zh"
-                ? "桌面应用正在构建中，请稍后再来查看。"
-                : "Desktop builds are in progress. Please check back later."}
-            </p>
-            <a href={`${config.docsPath}/quickstart`} className="empty-cta">
-              {lang === "zh"
-                ? "查看其他安装方式"
-                : "View other installation methods"}
-            </a>
+            <h3>{t("downloads.emptyTitle")}</h3>
+            <p>{t("downloads.emptyDesc")}</p>
+            <Link to={`${docsBase}/quickstart`} className="empty-cta">
+              {t("downloads.emptyCta")}
+            </Link>
           </div>
         )}
 
@@ -295,12 +265,10 @@ export function Downloads({ config, lang, onLangClick }: DownloadsProps) {
               <div className="product-section">
                 <div className="product-header">
                   <h3 className="product-title">
-                    {lang === "zh" ? "桌面应用" : "Desktop Application"}
+                    {t("downloads.desktopTitle")}
                   </h3>
                   <p className="product-description">
-                    {lang === "zh"
-                      ? "独立打包的桌面应用，内置完整 Python 环境和所有依赖。双击即用，无需命令行。"
-                      : "Standalone desktop app with bundled Python environment and all dependencies. Double-click to run, no command line required."}
+                    {t("downloads.desktopDesc")}
                   </p>
                 </div>
                 <div className="platform-grid">
@@ -322,7 +290,6 @@ export function Downloads({ config, lang, onLangClick }: DownloadsProps) {
                           fileMetadata={fileMetadata}
                           allVersions={allVersions}
                           isRecommended={isRecommended}
-                          lang={lang}
                         />
                       );
                     },
@@ -334,103 +301,77 @@ export function Downloads({ config, lang, onLangClick }: DownloadsProps) {
             <div className="product-section">
               <div className="product-header">
                 <h3 className="product-title">
-                  {lang === "zh"
-                    ? "其他安装方式"
-                    : "Other Installation Methods"}
+                  {t("downloads.otherMethodsTitle")}
                 </h3>
                 <p className="product-description">
-                  {lang === "zh"
-                    ? "根据您的需求选择合适的安装方式"
-                    : "Choose the installation method that fits your needs"}
+                  {t("downloads.otherMethodsDesc")}
                 </p>
               </div>
               <div className="other-methods">
-                <a
-                  href={`${config.docsPath}/quickstart`}
+                <Link
+                  to={`${docsBase}/quickstart#${
+                    isZh ? "方式一pip-安装" : "Option-1-pip-install"
+                  }`}
                   className="method-card"
                 >
                   <div className="method-icon">📦</div>
-                  <h4>pip</h4>
-                  <p>
-                    {lang === "zh"
-                      ? "使用 pip 安装到现有 Python 环境"
-                      : "Install via pip to existing Python environment"}
-                  </p>
-                </a>
-                <a
-                  href={`${config.docsPath}/quickstart`}
+                  <h4>{t("downloads.pip")}</h4>
+                  <p>{t("downloads.pipDesc")}</p>
+                </Link>
+                <Link
+                  to={`${docsBase}/quickstart#${
+                    isZh ? "方式二脚本安装" : "Option-2-Script-install"
+                  }`}
                   className="method-card"
                 >
                   <div className="method-icon">📜</div>
-                  <h4>{lang === "zh" ? "脚本安装" : "Script"}</h4>
-                  <p>
-                    {lang === "zh"
-                      ? "一键安装脚本，自动配置环境"
-                      : "One-line script with automatic setup"}
-                  </p>
-                </a>
-                <a
-                  href={`${config.docsPath}/quickstart`}
+                  <h4>{t("downloads.script")}</h4>
+                  <p>{t("downloads.scriptDesc")}</p>
+                </Link>
+                <Link
+                  to={`${docsBase}/quickstart#${
+                    isZh ? "方式三Docker" : "Option-3-Docker"
+                  }`}
                   className="method-card"
                 >
                   <div className="method-icon">🐳</div>
-                  <h4>Docker</h4>
-                  <p>
-                    {lang === "zh"
-                      ? "使用 Docker 镜像快速部署"
-                      : "Quick deployment with Docker images"}
-                  </p>
-                </a>
-                <a
-                  href={`${config.docsPath}/quickstart`}
+                  <h4>{t("downloads.docker")}</h4>
+                  <p>{t("downloads.dockerDesc")}</p>
+                </Link>
+                <Link
+                  to={`${docsBase}/quickstart#${
+                    isZh
+                      ? "方式四部署到阿里云-ECS"
+                      : "Option-4-Deploy-to-Alibaba-Cloud-ECS"
+                  }`}
                   className="method-card"
                 >
                   <div className="method-icon">☁️</div>
-                  <h4>{lang === "zh" ? "云部署" : "Cloud"}</h4>
-                  <p>
-                    {lang === "zh"
-                      ? "阿里云、魔搭等云平台一键部署"
-                      : "Deploy on Aliyun, ModelScope, etc."}
-                  </p>
-                </a>
+                  <h4>{t("downloads.cloud")}</h4>
+                  <p>{t("downloads.cloudDesc")}</p>
+                </Link>
               </div>
             </div>
 
             <section className="info-section">
               <div className="info-card">
-                <h4>{lang === "zh" ? "验证下载" : "Verify Download"}</h4>
-                <p>
-                  {lang === "zh"
-                    ? "下载桌面应用后，请使用 SHA256 校验和验证文件完整性。"
-                    : "After downloading the desktop app, verify file integrity using the SHA256 checksum."}
-                </p>
+                <h4>{t("downloads.verifyTitle")}</h4>
+                <p>{t("downloads.verifyDesc")}</p>
               </div>
               <div className="info-card">
-                <h4>{lang === "zh" ? "需要帮助？" : "Need Help?"}</h4>
+                <h4>{t("downloads.helpTitle")}</h4>
                 <p>
-                  {lang === "zh" ? (
-                    <>
-                      查看{" "}
-                      <a href={`${config.docsPath}/quickstart`}>安装向导</a>{" "}
-                      了解详细的安装步骤和配置说明。
-                    </>
-                  ) : (
-                    <>
-                      See the{" "}
-                      <a href={`${config.docsPath}/quickstart`}>
-                        installation guide
-                      </a>{" "}
-                      for detailed setup instructions.
-                    </>
-                  )}
+                  {t("downloads.helpPrefix")}{" "}
+                  <Link to={`${docsBase}/quickstart`}>
+                    {t("downloads.helpLink")}
+                  </Link>{" "}
+                  {t("downloads.helpSuffix")}
                 </p>
               </div>
             </section>
           </section>
         )}
       </div>
-
-      <Footer lang={lang} />
     </div>
   );
 }

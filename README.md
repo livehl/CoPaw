@@ -58,22 +58,25 @@ Your personal AI assistant — easy to install, deploy locally or in the cloud, 
 
 ## News
 
-[2026-03-24] We released v0.2.0! See the [v0.2.0 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
+[2026-03-30] We released v1.0.0! See the [v1.0.0 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
 
-- **[v0.2.0] Added:** Inter-agent communication; built-in QA agent; LLM auto-retry settings; file access guard for sensitive paths; audio, video & speech input in console chat; stream reconnection on page refresh; model provider search; multimodal capability probing with UI tags; enhanced grep & glob search; config auto-repair; summarization improvements.
-- **[v0.2.0] Changed:** Stable prompts for better KV cache hit rates; faster CLI startup; QQ channel refactor; smart text chunking for QQ & WeCom; QQ WebSocket reconnect config; dark mode polish across console UI.
-- **[v0.2.0] Fixed:** Shell command hang on Windows; Windows file path handling; macOS desktop build; channel message processing lock leak; agent list crash and refresh; console reconnect overflow; cron job cancellation.
-- **[v0.2.0] Contributors:** Thanks to new contributors: [@ixiadao](https://github.com/ixiadao), [@leoleils](https://github.com/leoleils), [@ltzu929](https://github.com/ltzu929), [@emoubarak](https://github.com/emoubarak), [@f3125472](https://github.com/f3125472), [@shiweijiezero](https://github.com/shiweijiezero), [@Yaohua-Leo](https://github.com/Yaohua-Leo), [@finenter-molei](https://github.com/finenter-molei), [@lizeruicq](https://github.com/lizeruicq), [@hbsjmsjwj](https://github.com/hbsjmsjwj), [@aquamarine-bot](https://github.com/aquamarine-bot), [@sanfran1068](https://github.com/sanfran1068), [@x1n95c](https://github.com/x1n95c), [@saschabuehrle](https://github.com/saschabuehrle).
+- **[v1.0.0] Added:**
+  - **Multi-Agent System**: Background task support with CLI `--background` flag and task tracking; agent enable/disable toggle via console and API; unified priority queue system with `/stop` command for task cancellation
+  - **Providers and Models**: CoPaw local model provider with llama.cpp; global LLM rate limiter with QPM sliding window
+  - **Security**: Tool guard rules for system reboot & service protection; Chinese prompt injection detection in skill scanner
+  - **Console & UI**: Download page for desktop installers with mirror sites; multimodal preview (image, audio, video, files) in console chat
+  - **Channels**: WeChat iLink Bot channel; custom channel HTTP routes for webhooks
+  - **Tools & Skills**: Async tool execution with background task helpers; two-layer skill pool architecture; browser CDP support for Chrome automation
+- **[v1.0.0] Changed:** Context management v2.0 with nested configuration models, new compaction hooks, tool result compaction, and proactive memory search; improved truncation logic; streaming grep search.
+- **[v1.0.0] Fixed:** Feishu WebSocket reconnection and multi-instance message routing; Discord duplicate messages; QQ voice message conversion; multi-agent model configuration; cross-platform file encoding.
+- **[v1.0.0] Documentation:** Comprehensive documentation update including multi-agent, installation & CLI docs, model provider docs, project structure guidelines, context management, security, MCP & tools, skills, and magic commands.
+- **[v1.0.0] Contributors:** Thanks to new contributors: [@qzcpl](https://github.com/qzcpl), [@livehl](https://github.com/livehl), [@carlos999-hqsama](https://github.com/carlos999-hqsama), [@bowenliang123](https://github.com/bowenliang123), [@jinglinpeng](https://github.com/jinglinpeng).
+
+[2026-03-24] We released v0.2.0! See the [v0.2.0 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
 
 [2026-03-18] We released v0.1.0! See the [v0.1.0 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
 
 [2026-03-12] We released v0.0.7! See the [v0.0.7 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
-
-[2026-03-09] We released v0.0.6! See the [v0.0.6 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
-
-[2026-03-06] We released v0.0.5! See the [v0.0.5 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
-
-[2026-03-02] We released v0.0.4! See the [v0.0.4 Release Notes](https://agentscope-ai.github.io/CoPaw/release-notes) for the full changelog.
 
 ---
 
@@ -481,9 +484,9 @@ CoPaw represents both a **Co Personal Agent Workstation** and a "co-paw"—a par
 
 ## Contact us
 
-| [Discord](https://discord.gg/eYMpfnkG8h)                     | [X (Twitter)](https://x.com/agentscope_ai)                   | [DingTalk](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11) |
-| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| [<img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="80" height="80" alt="Discord">](https://discord.gg/eYMpfnkG8h) | [<img src="https://img.shields.io/badge/X-black.svg?logo=x&logoColor=white" width="80" height="80" alt="X">](https://x.com/agentscope_ai) | [<img src="https://img.alicdn.com/imgextra/i2/O1CN01vCWI8a1skHtLGXEMQ_!!6000000005804-2-tps-458-460.png" width="80" height="80" alt="DingTalk">](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11) |
+| [Discord](https://discord.gg/eYMpfnkG8h)                     | [X (Twitter)](https://x.com/agentscope_ai)                   | [DingTalk](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11) | [RedNote](https://www.xiaohongshu.com/user/profile/691c18db0000000037032be9) |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| [<img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="80" height="80" alt="Discord">](https://discord.gg/eYMpfnkG8h) | [<img src="https://img.shields.io/badge/X-black.svg?logo=x&logoColor=white" width="80" height="80" alt="X">](https://x.com/agentscope_ai) | [<img src="https://img.alicdn.com/imgextra/i2/O1CN01vCWI8a1skHtLGXEMQ_!!6000000005804-2-tps-458-460.png" width="80" height="80" alt="DingTalk">](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11) | [<img src="https://img.alicdn.com/imgextra/i3/O1CN016BoEPS1l33CE9mHb9_!!6000000004762-0-tps-160-160.jpg" width="80" height="80" alt="RedNote">](https://www.xiaohongshu.com/user/profile/691c18db0000000037032be9) |
 
 ---
 

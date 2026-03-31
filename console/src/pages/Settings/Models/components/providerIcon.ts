@@ -28,6 +28,8 @@ export const providerIcon = (provider: string) => {
       return "https://gw.alicdn.com/imgextra/i4/O1CN01aDHDeq1mgj7gbRkhi_!!6000000004984-2-tps-400-400.png";
     case "lmstudio":
       return "https://gw.alicdn.com/imgextra/i4/O1CN01Abv67y1jHaXLqikIJ_!!6000000004523-2-tps-200-200.png";
+    case "copaw-local":
+      return "https://gw.alicdn.com/imgextra/i2/O1CN01pyXzjQ1EL1PuZMlSd_!!6000000000334-2-tps-288-288.png";
     default:
       return "https://gw.alicdn.com/imgextra/i4/O1CN01IWnlOw1lebfpiFrIL_!!6000000004844-0-tps-100-100.jpg";
   }
