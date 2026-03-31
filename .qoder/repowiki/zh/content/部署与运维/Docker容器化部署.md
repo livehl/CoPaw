@@ -29,6 +29,8 @@
 ## 简介
 本文件面向运维与开发人员，提供CoPaw项目的Docker容器化部署完整指南。内容涵盖镜像构建（含多阶段构建与参数化）、docker-compose编排、Supervisor进程管理、日志与端口配置、数据卷与网络策略、以及镜像版本同步与发布流程。读者可据此在本地或生产环境中稳定运行CoPaw控制台与应用服务。
 
+**更新** 移除了llama.cpp和MLX本地模型后端依赖，简化了部署流程，专注于核心功能的容器化运行。
+
 ## 项目结构
 与容器化部署直接相关的目录与文件如下：
 - 镜像构建：deploy/Dockerfile、deploy/entrypoint.sh、deploy/config/supervisord.conf.template
@@ -53,19 +55,19 @@ A --> K["src/copaw/config/utils.py"]
 ```
 
 图表来源
-- [deploy/Dockerfile:1-103](file://deploy/Dockerfile#L1-L103)
+- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
 - [docker-compose.yml:1-23](file://docker-compose.yml#L1-L23)
 - [deploy/entrypoint.sh:1-10](file://deploy/entrypoint.sh#L1-L10)
 - [deploy/config/supervisord.conf.template:1-40](file://deploy/config/supervisord.conf.template#L1-L40)
 - [scripts/docker_build.sh:1-32](file://scripts/docker_build.sh#L1-L32)
 - [scripts/docker_sync_latest.sh:1-77](file://scripts/docker_sync_latest.sh#L1-L77)
 - [.dockerignore:1-59](file://.dockerignore#L1-L59)
-- [pyproject.toml:1-102](file://pyproject.toml#L1-L102)
+- [pyproject.toml:1-103](file://pyproject.toml#L1-L103)
 - [setup.py:1-5](file://setup.py#L1-L5)
 - [src/copaw/config/utils.py:366-397](file://src/copaw/config/utils.py#L366-L397)
 
 章节来源
-- [deploy/Dockerfile:1-103](file://deploy/Dockerfile#L1-L103)
+- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
 - [docker-compose.yml:1-23](file://docker-compose.yml#L1-L23)
 
 ## 核心组件
@@ -74,10 +76,12 @@ A --> K["src/copaw/config/utils.py"]
 - 入口脚本：动态替换Supervisor配置中的端口变量，确保容器内端口可配置。
 - docker-compose编排：持久化工作目录与密钥目录，绑定主机端口到容器内部端口，设置重启策略。
 - 构建脚本：封装镜像构建参数（通道过滤、端口等），支持自定义标签与额外构建参数。
-- 版本同步脚本：通过Buildx镜像工具将“预发布”标签升级为“latest”。
+- 版本同步脚本：通过Buildx镜像工具将"预发布"标签升级为"latest"。
+
+**更新** 移除了llama.cpp和MLX相关的构建参数和依赖安装，简化了镜像构建流程。
 
 章节来源
-- [deploy/Dockerfile:1-103](file://deploy/Dockerfile#L1-L103)
+- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
 - [deploy/config/supervisord.conf.template:1-40](file://deploy/config/supervisord.conf.template#L1-L40)
 - [deploy/entrypoint.sh:1-10](file://deploy/entrypoint.sh#L1-L10)
 - [docker-compose.yml:1-23](file://docker-compose.yml#L1-L23)
@@ -111,7 +115,7 @@ PORT <- --> APP
 
 ### Dockerfile 多阶段构建与配置项
 - 前端构建阶段（console-builder）：基于Node基础镜像，安装依赖并执行构建，产物输出至dist目录。
-- 运行时阶段：安装Python、Chromium、Supervisor等运行时依赖；启用无沙箱模式以适配容器环境；复制前端构建产物；安装Python包（含可选的ollama支持）；初始化工作目录与默认配置；暴露应用端口并设置入口命令。
+- 运行时阶段：安装Python、Chromium、Supervisor等运行时依赖；启用无沙箱模式以适配容器环境；复制前端构建产物；安装Python包（移除了llama.cpp和MLX相关依赖）；初始化工作目录与默认配置；暴露应用端口并设置入口命令。
 - 关键构建参数与环境变量：
   - 通道过滤：COPAW_DISABLED_CHANNELS（黑名单，推荐）与COPAW_ENABLED_CHANNELS（白名单）。两者同时设置时白名单优先。
   - 端口：COPAW_PORT，默认8088，可通过容器运行时覆盖。
@@ -120,12 +124,14 @@ PORT <- --> APP
   - Chromium与Playwright：通过环境变量指向系统Chromium并禁用自动下载浏览器。
   - X11虚拟帧缓冲与桌面：Xvfb、XFCE、DBus，配合DISPLAY=:1提供图形界面能力。
 
+**更新** 移除了llama.cpp和MLX相关的可选依赖安装，简化了运行时依赖列表。
+
 ```mermaid
 flowchart TD
 Start(["开始"]) --> Stage1["Stage1: 构建前端<br/>复制console并执行构建"]
 Stage1 --> Stage2["Stage2: 运行时镜像<br/>安装系统依赖与Python"]
 Stage2 --> CopyConsole["复制前端构建产物到应用目录"]
-CopyConsole --> PipInstall["安装Python包含可选ollama"]
+CopyConsole --> PipInstall["安装Python核心依赖"]
 PipInstall --> Init["初始化工作目录与默认配置"]
 Init --> Env["设置环境变量与端口"]
 Env --> Expose["暴露应用端口"]
@@ -134,10 +140,10 @@ Cmd --> End(["结束"])
 ```
 
 图表来源
-- [deploy/Dockerfile:1-103](file://deploy/Dockerfile#L1-L103)
+- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
 
 章节来源
-- [deploy/Dockerfile:1-103](file://deploy/Dockerfile#L1-L103)
+- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
 - [src/copaw/config/utils.py:342-347](file://src/copaw/config/utils.py#L342-L347)
 
 ### docker-compose.yml 编排配置
@@ -217,8 +223,10 @@ App-->>Entrypoint : 应用就绪
   - 通过构建参数控制通道过滤（COPAW_DISABLED_CHANNELS/COPAW_ENABLED_CHANNELS）。
   - 默认端口提示与运行示例输出。
 - docker_sync_latest.sh：
-  - 通过Docker Buildx与imagetools将“pre”标签复制为“latest”，分别推送至阿里云镜像仓库与Docker Hub。
+  - 通过Docker Buildx与imagetools将"pre"标签复制为"latest"，分别推送至阿里云镜像仓库与Docker Hub。
   - 自动安装/校验buildx插件与imagetools能力。
+
+**更新** 移除了llama.cpp和MLX相关的构建参数处理，简化了构建脚本逻辑。
 
 ```mermaid
 flowchart TD
@@ -255,8 +263,10 @@ H --> I["将 pre 标签复制为 latestDocker Hub"]
 ## 依赖关系分析
 - 构建期依赖：Node基础镜像用于前端构建；Python基础镜像用于后端打包。
 - 运行期依赖：Python运行时、Chromium、Supervisor、Xvfb、XFCE、DBus等。
-- 包管理：pyproject.toml声明主依赖与可选特性（如ollama、llamacpp、whisper等），setup.py作为打包入口。
+- 包管理：pyproject.toml声明主依赖与可选特性（移除了llama.cpp和MLX相关依赖），setup.py作为打包入口。
 - 构建排除：.dockerignore避免将测试、IDE缓存、Node模块与日志等带入镜像，仅保留必要的前端dist。
+
+**更新** 移除了llama.cpp和MLX相关的可选依赖，简化了依赖管理。
 
 ```mermaid
 graph LR
@@ -270,14 +280,14 @@ IGN[".dockerignore"] -. 排除 .-> DF
 ```
 
 图表来源
-- [deploy/Dockerfile:1-103](file://deploy/Dockerfile#L1-L103)
+- [deploy/Dockerfile:1-110](file://deploy/Dockerfile#L1-L110)
 - [.dockerignore:1-59](file://.dockerignore#L1-L59)
-- [pyproject.toml:1-102](file://pyproject.toml#L1-L102)
+- [pyproject.toml:1-103](file://pyproject.toml#L1-L103)
 - [setup.py:1-5](file://setup.py#L1-L5)
 
 章节来源
 - [.dockerignore:1-59](file://.dockerignore#L1-L59)
-- [pyproject.toml:1-102](file://pyproject.toml#L1-L102)
+- [pyproject.toml:1-103](file://pyproject.toml#L1-L103)
 - [setup.py:1-5](file://setup.py#L1-L5)
 
 ## 性能考虑
@@ -286,6 +296,8 @@ IGN[".dockerignore"] -. 排除 .-> DF
 - 进程管理：Supervisor统一管理多个进程，避免僵尸进程与资源泄漏；优先级设置确保关键服务先启动。
 - 端口与网络：仅映射必要端口，限制外网访问；通过本地回环绑定减少暴露面。
 - 日志：各进程独立日志文件，便于定位问题；建议结合外部日志收集系统集中存储。
+
+**更新** 移除了本地模型后端相关的性能优化考虑，简化了性能分析。
 
 ## 故障排查指南
 - 应用无法访问或端口不通
@@ -308,6 +320,8 @@ IGN[".dockerignore"] -. 排除 .-> DF
   - 确认Docker Buildx与imagetools可用。
   - 检查镜像仓库凭证与网络连通性。
 
+**更新** 移除了与llama.cpp和MLX相关的故障排查内容，简化了故障排查指南。
+
 章节来源
 - [deploy/config/supervisord.conf.template:1-40](file://deploy/config/supervisord.conf.template#L1-L40)
 - [deploy/entrypoint.sh:1-10](file://deploy/entrypoint.sh#L1-L10)
@@ -317,7 +331,9 @@ IGN[".dockerignore"] -. 排除 .-> DF
 - [src/copaw/config/utils.py:342-347](file://src/copaw/config/utils.py#L342-L347)
 
 ## 结论
-通过多阶段Dockerfile、Supervisor进程管理与docker-compose编排，CoPaw可在容器中稳定运行并提供图形化桌面与多通道能力。合理设置端口、通道过滤与数据卷，结合版本同步脚本，可实现从构建到发布的自动化流程。建议在生产环境中进一步强化网络安全、日志监控与备份策略。
+通过多阶段Dockerfile、Supervisor进程管理与docker-compose编排，CoPaw可在容器中稳定运行并提供图形化桌面与多通道能力。合理设置端口、通道过滤与数据卷，结合版本同步脚本，可实现从构建到发布的自动化流程。移除了llama.cpp和MLX本地模型后端依赖后，部署流程更加简洁高效，建议在生产环境中进一步强化网络安全、日志监控与备份策略。
+
+**更新** 移除了本地模型后端相关的部署复杂度，简化了整体部署体验。
 
 ## 附录
 
@@ -339,7 +355,18 @@ IGN[".dockerignore"] -. 排除 .-> DF
 - COPAW_ENABLED_CHANNELS：通道白名单（以逗号分隔）
 - COPAW_RUNNING_IN_CONTAINER：容器运行标记（1/true/yes）
 
+**更新** 移除了与llama.cpp和MLX相关的环境变量说明。
+
 章节来源
 - [deploy/Dockerfile:14-25](file://deploy/Dockerfile#L14-L25)
 - [deploy/Dockerfile:74-78](file://deploy/Dockerfile#L74-L78)
 - [src/copaw/config/utils.py:342-347](file://src/copaw/config/utils.py#L342-L347)
+
+### 可选依赖说明
+- 当前Docker镜像不包含以下可选依赖：
+  - llama.cpp：本地大语言模型推理后端
+  - MLX：Apple Silicon芯片上的机器学习框架
+  - Ollama：本地模型服务接口
+  - Whisper：语音转文字功能
+
+**新增** 说明Docker镜像中不包含的可选依赖类型。

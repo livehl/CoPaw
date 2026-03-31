@@ -20,6 +20,8 @@ Media upload flow:
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import logging
 import os
 import uuid
@@ -346,29 +348,54 @@ class ILinkClient:
     async def getuploadurl(
         self,
         file_type: str,
-        file_size: int,
-        file_ext: str = "",
+        raw_size: int,
+        encrypted_size: int,
+        raw_md5: str,
+        aes_key: str,
+        to_user_id: str = "",
+        no_need_thumb: bool = True,
     ) -> Dict[str, Any]:
         """Request CDN upload URL and AES key for media upload.
 
         Args:
             file_type: One of "image", "file", "voice", "video".
-            file_size: Size of the file in bytes (before encryption).
-            file_ext: File extension (e.g. "jpg", "png", "mp4", "pdf").
+            raw_size: Size of the raw file in bytes (before encryption).
+            encrypted_size: Size of the encrypted file in bytes.
+            raw_md5: MD5 hash of the raw file.
+            aes_key: Base64-encoded AES-128 key for encryption.
+            to_user_id: Target user ID for the media message.
+            no_need_thumb: Whether to skip thumbnail upload URL.
 
         Returns:
             Dict with keys:
-                upload_url: CDN upload URL.
-                aes_key: Base64-encoded AES-128 key for encryption.
-                media_id: Media identifier (may be used in sendmessage).
+                upload_param: CDN upload encrypted parameters.
+                thumb_upload_param: Thumbnail upload encrypted params (if any).
         """
+        # Map file_type to media_type: 1=IMAGE, 2=VIDEO, 3=FILE, 4=VOICE
+        media_type_map = {
+            "image": 1,
+            "video": 2,
+            "file": 3,
+            "voice": 4,
+        }
+        media_type = media_type_map.get(file_type, 3)
+
+        # Generate filekey (16 bytes random hex = 32 chars)
+        filekey = uuid.uuid4().hex[:32]
+
+        # Build request body per official iLink API spec
         body: Dict[str, Any] = {
-            "file_type": file_type,
-            "file_size": file_size,
+            "filekey": filekey,
+            "media_type": media_type,
+            "to_user_id": to_user_id,
+            "rawsize": raw_size,
+            "rawfilemd5": raw_md5,
+            "filesize": encrypted_size,
+            "aeskey": aes_key,
+            "no_need_thumb": no_need_thumb,
             "base_info": {"channel_version": _CHANNEL_VERSION},
         }
-        if file_ext:
-            body["file_ext"] = file_ext
+
         return await self._post("ilink/bot/getuploadurl", body)
 
     async def upload_media(
@@ -376,53 +403,95 @@ class ILinkClient:
         data: bytes,
         file_type: str,
         file_ext: str = "",
-        aes_key_b64: str = "",
+        to_user_id: str = "",
     ) -> Dict[str, Any]:
         """Upload media to WeChat CDN with AES encryption.
 
         Flow:
-        1. Get upload URL and AES key from getuploadurl (or use provided key).
-        2. Encrypt data with AES-128-ECB.
-        3. Upload to CDN.
+        1. Generate AES key and encrypt data.
+        2. Get upload URL from getuploadurl.
+        3. Upload encrypted data to CDN.
+        4. Get download param from response header.
 
         Args:
             data: Raw media bytes to upload.
             file_type: One of "image", "file", "voice", "video".
             file_ext: File extension (e.g. "jpg", "png", "mp4", "pdf").
-            aes_key_b64: Optional pre-generated AES key; if empty, one will
-                be generated internally and returned.
+            to_user_id: Target user ID for the media message.
 
         Returns:
             Dict with keys:
-                cdn_url: CDN URL for the uploaded media.
-                aes_key: Base64-encoded AES key used for encryption.
-                media_id: Media identifier (if provided by API).
+                download_param: Encrypted query param for downloading.
+                aes_key: Hex-encoded AES key used for encryption.
+                filekey: File key used for upload.
         """
         assert self._client is not None, "ILinkClient not started"
 
-        # Step 1: Get upload URL
-        upload_info = await self.getuploadurl(file_type, len(data), file_ext)
-        upload_url = upload_info.get("upload_url", "")
-        if not upload_url:
-            raise ValueError(
-                f"getuploadurl did not return upload_url: {upload_info}",
-            )
-
-        # Use provided key or the one from API response
-        aes_key = aes_key_b64 or upload_info.get("aes_key", "")
-        if not aes_key:
-            aes_key = generate_aes_key_b64()
+        # Step 1: Generate AES key (16 bytes = 32 hex chars)
+        aes_key_hex = uuid.uuid4().hex[:32]
+        aes_key_bytes = bytes.fromhex(aes_key_hex)
 
         # Step 2: Encrypt data
-        encrypted_data = aes_ecb_encrypt(data, aes_key)
+        encrypted_data = aes_ecb_encrypt(data, aes_key_hex)
+        encrypted_size = len(encrypted_data)
 
-        # Step 3: Upload to CDN
-        # The upload_url might be a full URL or relative path
-        if upload_url.startswith("http"):
-            full_upload_url = upload_url
+        # Step 3: Calculate raw file MD5
+        raw_md5 = hashlib.md5(data).hexdigest()
+
+        # Step 4: Generate filekey (16 bytes random hex)
+        filekey = uuid.uuid4().hex[:32]
+
+        # Step 5: Get upload URL
+        upload_info = await self.getuploadurl(
+            file_type=file_type,
+            raw_size=len(data),
+            encrypted_size=encrypted_size,
+            raw_md5=raw_md5,
+            aes_key=aes_key_hex,
+            to_user_id=to_user_id,
+            no_need_thumb=True,
+        )
+        # API v2.1+ returns upload_full_url instead of upload_param
+        upload_param = upload_info.get("upload_param", "")
+        upload_full_url = upload_info.get("upload_full_url", "")
+
+        ret = upload_info.get("ret", 0)
+        if ret != 0:
+            errmsg = upload_info.get("errmsg", "")
+            logger.warning(
+                "weixin getuploadurl failed: ret=%s, errmsg=%s, "
+                "file_type=%s, raw_size=%s, encrypted_size=%s",
+                ret,
+                errmsg,
+                file_type,
+                len(data),
+                encrypted_size,
+            )
+        if not upload_param:
+            raise ValueError(
+                f"getuploadurl did not return upload_param: {upload_info}",
+            )
+
+        # Step 6: Build CDN upload URL
+        # Use upload_full_url directly if available (API v2.1+), otherwise build from upload_param
+        if upload_full_url:
+            # upload_full_url already contains the full CDN URL with all params
+            full_upload_url = upload_full_url
+            logger.debug("weixin CDN upload: using upload_full_url directly")
         else:
-            full_upload_url = f"{_CDN_BASE_URL}/{upload_url.lstrip('/')}"
+            # Build URL from upload_param (legacy API)
+            from urllib.parse import quote
+            full_upload_url = (
+                f"{_CDN_BASE_URL}/upload?"
+                f"encrypted_query_param={quote(upload_param, safe='')}&"
+                f"filekey={filekey}"
+            )
+        logger.debug(
+            "weixin CDN upload URL: %s...",
+            full_upload_url[:100],
+        )
 
+        # Step 7: Upload to CDN
         resp = await self._client.post(
             full_upload_url,
             content=encrypted_data,
@@ -431,23 +500,20 @@ class ILinkClient:
         )
         resp.raise_for_status()
 
-        # Parse response - might be JSON or contain the CDN URL
-        try:
-            result = resp.json()
-        except Exception:
-            result = {}
-
-        # Extract cdn_url from response or construct it
-        cdn_url = result.get("cdn_url", "") or result.get("url", "")
-        if not cdn_url:
-            # Some responses may return the URL in different fields
-            cdn_url = result.get("media_id", "")
+        # Step 8: Get download param from response header
+        download_param = resp.headers.get("x-encrypted-param", "")
+        if not download_param:
+            logger.warning(
+                "weixin CDN upload response missing x-encrypted-param header"
+            )
 
         return {
-            "cdn_url": cdn_url,
-            "aes_key": aes_key,
-            "media_id": result.get("media_id", ""),
-            "raw_response": result,
+            "download_param": download_param,
+            "aes_key": aes_key_hex,
+            "filekey": filekey,
+            "encrypted_size": encrypted_size,
+            "raw_size": len(data),
+            "raw_response": {"status_code": resp.status_code},
         }
 
     # ------------------------------------------------------------------
@@ -476,14 +542,24 @@ class ILinkClient:
             image_data,
             file_type="image",
             file_ext=file_ext,
+            to_user_id=to_user_id,
         )
+        # Use download_param as encrypt_query_param (not full URL)
+        download_param = upload_result["download_param"]
+        # Convert hex aes_key to base64 for API
+        aes_key_b64 = base64.b64encode(
+            bytes.fromhex(upload_result["aes_key"])
+        ).decode()
+        # Get encrypted file size for mid_size
+        encrypted_size = upload_result.get("encrypted_size", len(image_data))
         return await self._send_media_message(
             to_user_id=to_user_id,
             context_token=context_token,
             item_type=MESSAGE_ITEM_TYPE_IMAGE,
-            media_url=upload_result["cdn_url"],
-            aes_key=upload_result["aes_key"],
+            encrypt_query_param=download_param,
+            aes_key=aes_key_b64,
             file_ext=file_ext,
+            mid_size=encrypted_size,
         )
 
     async def send_file(
@@ -509,15 +585,25 @@ class ILinkClient:
             file_data,
             file_type="file",
             file_ext=file_ext,
+            to_user_id=to_user_id,
         )
+        # Use download_param as encrypt_query_param (not full URL)
+        download_param = upload_result["download_param"]
+        # Convert hex aes_key to base64 for API
+        aes_key_b64 = base64.b64encode(
+            bytes.fromhex(upload_result["aes_key"])
+        ).decode()
+        # Get raw file size for len field
+        raw_size = upload_result.get("raw_size", len(file_data))
         return await self._send_media_message(
             to_user_id=to_user_id,
             context_token=context_token,
             item_type=MESSAGE_ITEM_TYPE_FILE,
-            media_url=upload_result["cdn_url"],
-            aes_key=upload_result["aes_key"],
+            encrypt_query_param=download_param,
+            aes_key=aes_key_b64,
             filename=filename,
             file_ext=file_ext,
+            file_size=raw_size,
         )
 
     async def send_voice(
@@ -542,13 +628,20 @@ class ILinkClient:
             voice_data,
             file_type="voice",
             file_ext=file_ext,
+            to_user_id=to_user_id,
         )
+        # Use download_param as encrypt_query_param (not full URL)
+        download_param = upload_result["download_param"]
+        # Convert hex aes_key to base64 for API
+        aes_key_b64 = base64.b64encode(
+            bytes.fromhex(upload_result["aes_key"])
+        ).decode()
         return await self._send_media_message(
             to_user_id=to_user_id,
             context_token=context_token,
             item_type=MESSAGE_ITEM_TYPE_VOICE,
-            media_url=upload_result["cdn_url"],
-            aes_key=upload_result["aes_key"],
+            encrypt_query_param=download_param,
+            aes_key=aes_key_b64,
             file_ext=file_ext,
         )
 
@@ -574,14 +667,24 @@ class ILinkClient:
             video_data,
             file_type="video",
             file_ext=file_ext,
+            to_user_id=to_user_id,
         )
+        # Use download_param as encrypt_query_param (not full URL)
+        download_param = upload_result["download_param"]
+        # Convert hex aes_key to base64 for API
+        aes_key_b64 = base64.b64encode(
+            bytes.fromhex(upload_result["aes_key"])
+        ).decode()
+        # Get encrypted file size for video_size
+        encrypted_size = upload_result.get("encrypted_size", len(video_data))
         return await self._send_media_message(
             to_user_id=to_user_id,
             context_token=context_token,
             item_type=MESSAGE_ITEM_TYPE_VIDEO,
-            media_url=upload_result["cdn_url"],
-            aes_key=upload_result["aes_key"],
+            encrypt_query_param=download_param,
+            aes_key=aes_key_b64,
             file_ext=file_ext,
+            video_size=encrypted_size,
         )
 
     async def _send_media_message(
@@ -589,10 +692,13 @@ class ILinkClient:
         to_user_id: str,
         context_token: str,
         item_type: int,
-        media_url: str,
+        encrypt_query_param: str,
         aes_key: str,
         file_ext: str = "",
         filename: str = "",
+        mid_size: int = 0,
+        video_size: int = 0,
+        file_size: int = 0,
     ) -> Dict[str, Any]:
         """Internal helper to send a media message via sendmessage.
 
@@ -600,10 +706,13 @@ class ILinkClient:
             to_user_id: Recipient user ID.
             context_token: context_token from inbound message.
             item_type: Message item type (IMAGE=2, VOICE=3, FILE=4, VIDEO=5).
-            media_url: CDN URL of the uploaded media.
-            aes_key: AES key used for encryption (sent to recipient).
+            encrypt_query_param: CDN download encrypted query param.
+            aes_key: AES key used for encryption (base64-encoded, sent to recipient).
             file_ext: File extension.
             filename: Filename (for file type only).
+            mid_size: Ciphertext file size for images.
+            video_size: Ciphertext file size for videos.
+            file_size: Raw file size for files.
 
         Returns:
             API response dict.
@@ -613,31 +722,38 @@ class ILinkClient:
         if item_type == MESSAGE_ITEM_TYPE_IMAGE:
             item["image_item"] = {
                 "media": {
-                    "url": media_url,
+                    "encrypt_query_param": encrypt_query_param,
                     "aes_key": aes_key,
+                    "encrypt_type": 1,
                 },
+                "mid_size": mid_size,
             }
         elif item_type == MESSAGE_ITEM_TYPE_VOICE:
             item["voice_item"] = {
                 "media": {
-                    "url": media_url,
+                    "encrypt_query_param": encrypt_query_param,
                     "aes_key": aes_key,
+                    "encrypt_type": 1,
                 },
             }
         elif item_type == MESSAGE_ITEM_TYPE_FILE:
             item["file_item"] = {
                 "media": {
-                    "url": media_url,
+                    "encrypt_query_param": encrypt_query_param,
                     "aes_key": aes_key,
+                    "encrypt_type": 1,
                 },
-                "filename": filename,
+                "file_name": filename,
+                "len": str(file_size),
             }
         elif item_type == MESSAGE_ITEM_TYPE_VIDEO:
             item["video_item"] = {
                 "media": {
-                    "url": media_url,
+                    "encrypt_query_param": encrypt_query_param,
                     "aes_key": aes_key,
+                    "encrypt_type": 1,
                 },
+                "video_size": video_size,
             }
 
         return await self.sendmessage(

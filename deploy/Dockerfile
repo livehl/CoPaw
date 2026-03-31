@@ -82,12 +82,18 @@ WORKDIR ${WORKSPACE_DIR}
 RUN python3 -m venv venv
 ENV PATH="/app/venv/bin:$PATH"
 
+# Copy dependency files first for better layer caching
 COPY pyproject.toml setup.py README.md ./
+# Install dependencies only (cached layer - only re-runs if pyproject.toml changes)
+# First try to get deps from pyproject.toml using Python, fallback to installing package
+RUN python3 -c "import tomllib; f=open('pyproject.toml','rb'); d=tomllib.load(f); deps=d['project']['dependencies']; print('\n'.join(deps))" > /tmp/requirements.txt && \
+    pip install --no-cache-dir -r /tmp/requirements.txt
+
 COPY src ./src
 # Inject console dist from build stage (repo does not commit dist).
 COPY --from=console-builder /app/console/dist/ ./src/copaw/console/
-# Install core dependencies only (no llama.cpp/MLX - not available in container)
-RUN pip install --no-cache-dir .
+# Install the package itself (source code changes, quick reinstall)
+RUN pip install --no-cache-dir --no-deps -e .
 
 # Init working dir with default config.json and HEARTBEAT.md (build time).
 RUN copaw init --defaults --accept-security
